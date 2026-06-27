@@ -291,16 +291,34 @@
     <script>
       const BLOCKED_FLASH_URL_HOSTS = new Set(["server.cpmstar.com"]);
       const nativeFetch = window.fetch.bind(window);
+      const emptySwfResponse = () =>
+        new Response(new Uint8Array(), {
+          status: 200,
+          headers: {
+            "content-type": "application/x-shockwave-flash"
+          }
+        });
 
-      window.fetch = (input, init) => {
-        const url = typeof input === "string" ? input : input?.url;
+      function blockedFlashUrl(input) {
+        const rawUrl =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input instanceof Request
+                ? input.url
+                : input?.url || String(input || "");
 
         try {
-          if (url && BLOCKED_FLASH_URL_HOSTS.has(new URL(url, window.location.href).hostname)) {
-            return Promise.resolve(new Response(new Uint8Array(), { status: 204 }));
-          }
+          return BLOCKED_FLASH_URL_HOSTS.has(new URL(rawUrl, window.location.href).hostname);
         } catch {
-          // Let malformed or non-URL fetch inputs fall through to the browser implementation.
+          return rawUrl.includes("server.cpmstar.com");
+        }
+      }
+
+      window.fetch = (input, init) => {
+        if (blockedFlashUrl(input)) {
+          return Promise.resolve(emptySwfResponse());
         }
 
         return nativeFetch(input, init);
