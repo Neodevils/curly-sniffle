@@ -146,6 +146,14 @@ export class MultiplayerRoom {
       return;
     }
 
+    this.send(session, {
+      type: "input_ack",
+      action: input.action,
+      code: input.code,
+      role: input.role,
+      seq: input.seq,
+      t: Date.now(),
+    });
     this.broadcast(input, session.id);
   }
 

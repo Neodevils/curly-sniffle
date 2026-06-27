@@ -254,6 +254,14 @@ export class MultiplayerRoom {
 
     const input = this.validatedInput(session, message);
     if (input) {
+      this.send(session, {
+        type: "input_ack",
+        action: input.action,
+        code: input.code,
+        role: input.role,
+        seq: input.seq,
+        t: Date.now()
+      });
       this.broadcast(input, session.id);
     }
   }

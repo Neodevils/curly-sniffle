@@ -474,7 +474,7 @@
       syncRoomUrl();
 
       function debugLog(...args) {
-        if (DEBUG_MULTIPLAYER) {
+        if (DEBUG_MULTIPLAYER || debugMode) {
           console.debug("[multiplayer]", ...args);
         }
       }
@@ -640,6 +640,13 @@
         });
       }
 
+      function requestKeyboardCapture() {
+        if (!isDiscordActivity || !navigator.keyboard?.lock) return;
+        navigator.keyboard.lock(Array.from(CONTROLLED_CODES)).catch((error) => {
+          debugLog("keyboard lock failed", error);
+        });
+      }
+
       function ruffleEventTargets() {
         const targets = [rufflePlayer];
         if (rufflePlayer?.shadowRoot) targets.push(rufflePlayer.shadowRoot);
@@ -713,6 +720,7 @@
 
         socket.addEventListener("open", () => {
           setStatus("connected", "Connected");
+          requestKeyboardCapture();
           heartbeatTimer = window.setInterval(() => sendRaw({ type: "ping", t: Date.now() }), 15000);
         });
 
@@ -790,6 +798,11 @@
           return;
         }
 
+        if (message.type === "input_ack") {
+          debugLog("input ack", message.role, message.action, message.code, message.seq);
+          return;
+        }
+
         if (message.type === "input" && message.sessionId !== sessionId) {
           dispatchRemoteInput(message);
         }
@@ -823,6 +836,8 @@
         }
 
         if (!canSendCode(code)) return;
+
+        event.preventDefault();
 
         if (event.type === "keydown") {
           if (event.repeat || localHeldCodes.has(code)) return;
@@ -863,28 +878,38 @@
 
       function dispatchKeyboard(action, code, keyInfo) {
         for (const dispatchTarget of ruffleEventTargets()) {
-          const keyboardEvent = new KeyboardEvent(action, {
+          const keyboardEvent = createKeyboardEvent(action, code, keyInfo, 0);
+          dispatchTarget.dispatchEvent(keyboardEvent);
+
+          if (action === "keydown" && keyInfo.key.length === 1) {
+            dispatchTarget.dispatchEvent(createKeyboardEvent("keypress", code, keyInfo, keyInfo.key.charCodeAt(0)));
+          }
+        }
+      }
+
+      function createKeyboardEvent(action, code, keyInfo, charCode) {
+        const keyboardEvent = new KeyboardEvent(action, {
             key: keyInfo.key,
             code,
             keyCode: keyInfo.keyCode,
             which: keyInfo.keyCode,
-            charCode: 0,
+            charCode,
             location: 0,
             repeat: false,
             view: window,
             bubbles: true,
+            composed: true,
             cancelable: true
           });
-          defineKeyCode(keyboardEvent, keyInfo.keyCode);
-          dispatchTarget.dispatchEvent(keyboardEvent);
-        }
+        defineKeyCode(keyboardEvent, keyInfo.keyCode, charCode);
+        return keyboardEvent;
       }
 
-      function defineKeyCode(event, keyCode) {
+      function defineKeyCode(event, keyCode, charCode = 0) {
         for (const property of ["keyCode", "which", "charCode"]) {
           try {
             Object.defineProperty(event, property, {
-              get: () => (property === "charCode" ? 0 : keyCode)
+              get: () => (property === "charCode" ? charCode : keyCode)
             });
           } catch {
             debugLog("key code define failed", property);
@@ -1180,7 +1205,10 @@
       }
 
       target?.addEventListener("pointerup", notifyHostGameStart, true);
-      target?.addEventListener("pointerdown", installKeyboardListeners, true);
+      target?.addEventListener("pointerdown", () => {
+        installKeyboardListeners();
+        requestKeyboardCapture();
+      }, true);
       document.addEventListener("focusin", installKeyboardListeners, true);
 
       installKeyboardListeners();
