@@ -5,6 +5,15 @@ const ROLE_KEYMAP = {
 
 type PlayerRole = "fire" | "water" | "spectator";
 
+type Session = {
+  id: string;
+  socket: WebSocket;
+  role: PlayerRole;
+  room: string;
+  joinedAt: number;
+  lastSeen: number;
+};
+
 type Env = {
   ROOMS: DurableObjectNamespace;
   DISCORD_CLIENT_ID?: string;
@@ -123,17 +132,7 @@ function jsonResponse(payload: Record<string, unknown>, status = 200): Response 
 
 export class MultiplayerRoom {
   private gameStarted = false;
-  private sessions = new Map<
-    string,
-    {
-      id: string;
-      socket: WebSocket;
-      role: PlayerRole;
-      room: string;
-      joinedAt: number;
-      lastSeen: number;
-    }
-  >();
+  private sessions = new Map<string, Session>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -157,11 +156,13 @@ export class MultiplayerRoom {
       });
     }
 
+    this.dropClosedSessions();
+
     const preferredRole = normalizeRole(url.searchParams.get("preferredRole"));
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    const session = {
+    const session: Session = {
       id: crypto.randomUUID(),
       socket: server,
       role: this.assignRole(preferredRole),
@@ -194,12 +195,12 @@ export class MultiplayerRoom {
   }
 
   private assignRole(preferredRole: "fire" | "water" | ""): PlayerRole {
-    if (preferredRole && this.isRoleFree(preferredRole)) {
-      return preferredRole;
-    }
-
     if (this.isRoleFree("fire")) {
       return "fire";
+    }
+
+    if (preferredRole === "water" && this.isRoleFree("water")) {
+      return "water";
     }
 
     if (this.isRoleFree("water")) {
@@ -219,10 +220,7 @@ export class MultiplayerRoom {
     return true;
   }
 
-  private handleMessage(
-    session: { id: string; socket: WebSocket; role: PlayerRole; lastSeen: number },
-    event: MessageEvent
-  ): void {
+  private handleMessage(session: Session, event: MessageEvent): void {
     session.lastSeen = Date.now();
 
     let message: Record<string, unknown>;
@@ -243,33 +241,38 @@ export class MultiplayerRoom {
       return;
     }
 
-    if (message.type === "pointer" || message.type === "frame") {
+    if (message.type === "input") {
+      const input = this.validatedInput(session, message);
+      if (input) {
+        this.send(session, {
+          type: "input_ack",
+          action: input.action,
+          code: input.code,
+          role: input.role,
+          seq: input.seq,
+          t: Date.now()
+        });
+        this.broadcast(input, session.id);
+      }
       return;
     }
 
-    if (message.type !== "input") {
-      this.send(session, { type: "error", code: "bad_type", message: "Unsupported message type." });
+    if (message.type === "state" || message.type === "frame") {
+      const state = this.validatedState(session, message);
+      if (state) {
+        this.broadcast(state, session.id);
+      }
       return;
     }
 
-    const input = this.validatedInput(session, message);
-    if (input) {
-      this.send(session, {
-        type: "input_ack",
-        action: input.action,
-        code: input.code,
-        role: input.role,
-        seq: input.seq,
-        t: Date.now()
-      });
-      this.broadcast(input, session.id);
+    if (message.type === "pointer") {
+      return;
     }
+
+    this.send(session, { type: "error", code: "bad_type", message: "Unsupported message type." });
   }
 
-  private validatedInput(
-    session: { id: string; socket: WebSocket; role: PlayerRole },
-    message: Record<string, unknown>
-  ): Record<string, unknown> | null {
+  private validatedInput(session: Session, message: Record<string, unknown>): Record<string, unknown> | null {
     if (session.role !== "fire" && session.role !== "water") {
       this.send(session, { type: "error", code: "spectator_input", message: "Spectators cannot send input." });
       return null;
@@ -298,7 +301,39 @@ export class MultiplayerRoom {
       role: session.role,
       seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
       t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
-      sessionId: session.id
+      sessionId: session.id,
+      serverT: Date.now()
+    };
+  }
+
+  private validatedState(session: Session, message: Record<string, unknown>): Record<string, unknown> | null {
+    if (session.role !== "fire" && session.role !== "water") {
+      return null;
+    }
+
+    if (message.role !== session.role) {
+      return null;
+    }
+
+    const allowedCodes = ROLE_KEYMAP[session.role];
+    const rawHeldCodes = Array.isArray(message.heldCodes)
+      ? message.heldCodes
+      : Array.isArray(message.held)
+        ? message.held
+        : [];
+    const heldCodes = rawHeldCodes
+      .filter((code): code is string => typeof code === "string" && allowedCodes.has(code))
+      .slice(0, allowedCodes.size);
+
+    return {
+      type: "state",
+      role: session.role,
+      heldCodes,
+      seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
+      inputSeq: typeof message.inputSeq === "number" && Number.isFinite(message.inputSeq) ? message.inputSeq : 0,
+      t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
+      sessionId: session.id,
+      serverT: Date.now()
     };
   }
 
@@ -327,10 +362,11 @@ export class MultiplayerRoom {
     });
   }
 
-  private players(): Array<{ id: string; role: PlayerRole; joinedAt: number; lastSeen: number }> {
+  private players(): Array<{ id: string; role: PlayerRole; slot: "host" | "joiner" | "spectator"; joinedAt: number; lastSeen: number }> {
     return Array.from(this.sessions.values()).map((session) => ({
       id: session.id,
       role: session.role,
+      slot: session.role === "fire" ? "host" : session.role === "water" ? "joiner" : "spectator",
       joinedAt: session.joinedAt,
       lastSeen: session.lastSeen
     }));
@@ -342,9 +378,17 @@ export class MultiplayerRoom {
     }
   }
 
-  private startGame(session: { id: string; socket: WebSocket; role: PlayerRole }): void {
+  private dropClosedSessions(): void {
+    for (const session of this.sessions.values()) {
+      if (session.socket.readyState !== WebSocket.OPEN) {
+        this.sessions.delete(session.id);
+      }
+    }
+  }
+
+  private startGame(session: Session): void {
     if (session.role !== "fire") {
-      this.send(session, { type: "error", code: "not_host", message: "Only the host can start the room." });
+      this.send(session, { type: "error", code: "not_host", message: "Only Fireboy host can start the room." });
       return;
     }
 
@@ -358,7 +402,6 @@ export class MultiplayerRoom {
     });
     this.broadcastPresence();
   }
-
 }
 
 function normalizeRole(value: string | null): "fire" | "water" | "" {
