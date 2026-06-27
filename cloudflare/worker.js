@@ -65,13 +65,14 @@ export class MultiplayerRoom {
       return new Response("Missing or invalid room", { status: 400 });
     }
 
+    const preferredRole = normalizeRole(url.searchParams.get("preferredRole"));
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     const session = {
       id: crypto.randomUUID(),
       socket: server,
-      role: this.assignRole(),
+      role: this.assignRole(preferredRole),
       room,
       joinedAt: Date.now(),
       lastSeen: Date.now(),
@@ -96,7 +97,11 @@ export class MultiplayerRoom {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  assignRole() {
+  assignRole(preferredRole) {
+    if (preferredRole && this.isRoleFree(preferredRole)) {
+      return preferredRole;
+    }
+
     for (const role of ACTIVE_ROLES) {
       if (this.isRoleFree(role)) {
         return role;
@@ -214,6 +219,10 @@ export class MultiplayerRoom {
       this.broadcastPresence();
     }
   }
+}
+
+function normalizeRole(value) {
+  return value === "fire" || value === "water" ? value : "";
 }
 
 function sanitizeRoom(value) {

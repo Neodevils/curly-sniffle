@@ -157,13 +157,14 @@ export class MultiplayerRoom {
       });
     }
 
+    const preferredRole = normalizeRole(url.searchParams.get("preferredRole"));
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     const session = {
       id: crypto.randomUUID(),
       socket: server,
-      role: this.assignRole(),
+      role: this.assignRole(preferredRole),
       room,
       joinedAt: Date.now(),
       lastSeen: Date.now()
@@ -192,7 +193,11 @@ export class MultiplayerRoom {
     } as ResponseInit & { webSocket: WebSocket });
   }
 
-  private assignRole(): PlayerRole {
+  private assignRole(preferredRole: "fire" | "water" | ""): PlayerRole {
+    if (preferredRole && this.isRoleFree(preferredRole)) {
+      return preferredRole;
+    }
+
     if (this.isRoleFree("fire")) {
       return "fire";
     }
@@ -366,6 +371,10 @@ export class MultiplayerRoom {
       players: this.players()
     });
   }
+}
+
+function normalizeRole(value: string | null): "fire" | "water" | "" {
+  return value === "fire" || value === "water" ? value : "";
 }
 
 function sanitizeRoom(value: string | null): string {
