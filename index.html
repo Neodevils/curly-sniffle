@@ -3,9 +3,96 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Ruffle Flash Player</title>
-    <meta name="description" content="A legal Ruffle + GitHub Pages scaffold for a licensed SWF file." />
-    <link rel="stylesheet" href="./styles.css" />
+    <title>Fire & Water</title>
+    <meta name="description" content="Ruffle-powered single page SWF player." />
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1117;
+        --card: #171a23;
+        --text: #f4f7fb;
+        --muted: #9aa4b2;
+        --line: #282d3a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(255, 97, 56, 0.16), transparent 32rem),
+          radial-gradient(circle at bottom right, rgba(62, 166, 255, 0.16), transparent 32rem),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .shell {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: rgba(23, 26, 35, 0.86);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+      }
+
+      .topbar {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 22px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(1.4rem, 2vw, 2rem);
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--text);
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      .player {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        background: #07080c;
+      }
+
+      ruffle-player {
+        width: 100%;
+        height: 100%;
+      }
+
+      .notice {
+        padding: 16px 22px 20px;
+        border-top: 1px solid var(--line);
+        font-size: 0.92rem;
+      }
+    </style>
 
     <script>
       window.RufflePlayer = window.RufflePlayer || {};
@@ -26,8 +113,8 @@
       <section class="card">
         <div class="topbar">
           <div>
-            <h1>Ruffle SWF Player</h1>
-            <p>Put your own licensed SWF at <code>swf/game.swf</code>.</p>
+            <h1>Fire & Water</h1>
+            <p>Running with Ruffle on GitHub Pages.</p>
           </div>
           <a class="button" href="./swf/game.swf">Open SWF</a>
         </div>
@@ -35,12 +122,32 @@
         <div id="player" class="player" aria-label="Flash game player"></div>
 
         <p class="notice">
-          This template intentionally does not include any copyrighted game file.
-          Only upload a SWF you created, own, or have permission to distribute.
+          SWF file is user-provided. Keep your license/permission proof with the project records.
         </p>
       </section>
     </main>
 
-    <script src="./src/app.js" type="module"></script>
+    <script>
+      const FILE_PATH = "./swf/game.swf";
+      const target = document.querySelector("#player");
+
+      async function boot() {
+        const api = window.RufflePlayer?.newest?.();
+
+        if (!api || !target) {
+          console.error("Ruffle or player container was not found.");
+          return;
+        }
+
+        const player = api.createPlayer();
+        target.appendChild(player);
+
+        await player.ruffle().load(FILE_PATH);
+      }
+
+      boot().catch((error) => {
+        console.error("Failed to load the SWF file:", error);
+      });
+    </script>
   </body>
 </html>
