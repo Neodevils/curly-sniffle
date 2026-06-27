@@ -190,34 +190,6 @@
         opacity: 0.48;
       }
 
-      .invite-button {
-        min-width: 104px;
-        background: rgba(88, 101, 242, 0.88);
-        border-color: rgba(255, 255, 255, 0.2);
-        font-weight: 750;
-      }
-
-      .invite-button:hover {
-        background: rgba(88, 101, 242, 1);
-      }
-
-      .hint {
-        position: fixed;
-        left: max(12px, env(safe-area-inset-left));
-        bottom: max(12px, env(safe-area-inset-bottom));
-        z-index: 10;
-        max-width: min(420px, calc(100vw - 24px));
-        padding: 10px 12px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--glass);
-        color: rgba(244, 247, 251, 0.82);
-        font-size: 12px;
-        line-height: 1.35;
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-      }
-
       .touch-controls {
         position: fixed;
         inset-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
@@ -342,8 +314,6 @@
 
     <section id="playerUi" class="player-ui" aria-label="Game controls">
       <span id="compactRoleText" class="role-pill">Single player</span>
-      <button id="inviteFriendButton" class="button invite-button is-hidden" type="button">Invite Friend</button>
-      <button id="compactFullscreenButton" class="button" type="button">Fullscreen</button>
     </section>
 
     <section id="debugOverlay" class="overlay is-hidden" aria-label="Multiplayer debug status">
@@ -363,8 +333,6 @@
         <button id="fullscreenButton" class="button" type="button">Fullscreen</button>
       </div>
     </section>
-
-    <div id="hint" class="hint">Fullscreen için sağ üstteki butona bas. Mobilde tarayıcı bazen tam ekran iznini kısıtlayabilir.</div>
 
     <div id="touchControls" class="touch-controls" aria-label="Touch controls">
       <div class="dpad" data-role="fire" aria-label="Fireboy touch controls">
@@ -387,6 +355,8 @@
       const DISCORD_CLIENT_ID = "1520427674860912660";
       const MULTIPLAYER_SERVER_URL = "wss://fireboy-watergirl.neodevils-contact.workers.dev/room";
       const DISCORD_ACTIVITY_SERVER_URL = "/api/room";
+      const DISCORD_AUTH_TOKEN_URL = "/api/auth/discord/token";
+      const DISCORD_ACTIVITY_SCOPES = ["openid", "guilds", "sdk.social_layer_presence", "activities.write"];
       const ROLE_KEYMAP = {
         fire: {
           ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
@@ -417,11 +387,8 @@
       const target = document.querySelector("#player");
       const debugOverlay = document.querySelector("#debugOverlay");
       const fullscreenButton = document.querySelector("#fullscreenButton");
-      const compactFullscreenButton = document.querySelector("#compactFullscreenButton");
-      const inviteFriendButton = document.querySelector("#inviteFriendButton");
       const copyInviteButton = document.querySelector("#copyInviteButton");
       const reconnectButton = document.querySelector("#reconnectButton");
-      const hint = document.querySelector("#hint");
       const setupMessage = document.querySelector("#setupMessage");
       const statusDot = document.querySelector("#statusDot");
       const statusText = document.querySelector("#statusText");
@@ -445,6 +412,7 @@
       let seq = 0;
       let discordSdk = null;
       let discordReady = false;
+      let discordAuthenticated = false;
       let discordParticipants = 0;
       let currentPlayers = [];
       const localHeldCodes = new Set();
@@ -550,10 +518,20 @@
       }
 
       function roleLabel(role) {
-        if (role === "fire") return "You are Fireboy";
-        if (role === "water") return "You are Watergirl";
+        if (role === "fire") return "Host - Fireboy";
+        if (role === "water") return "Guest - Watergirl";
         if (role === "spectator") return "Spectator";
         return "Single player";
+      }
+
+      function isHostRole() {
+        return assignedRole === "fire" || assignedRole === "single-player";
+      }
+
+      function blockGuestPointer(event) {
+        if (!serverUrl || isHostRole()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
       }
 
       function updateTouchControls() {
@@ -903,7 +881,8 @@
           await withTimeout(discordSdk.ready(), DISCORD_READY_TIMEOUT_MS);
           discordReady = true;
           discordText.textContent = "ready";
-          inviteFriendButton?.classList.remove("is-hidden");
+          await authenticateDiscordActivity();
+          await updateDiscordActivityStatus();
           await refreshDiscordParticipants();
           subscribeDiscordParticipants(Events);
         } catch (error) {
@@ -918,6 +897,59 @@
           promise,
           new Promise((_, reject) => window.setTimeout(() => reject(new Error("Discord SDK ready timed out")), timeoutMs))
         ]);
+      }
+
+      async function authenticateDiscordActivity() {
+        if (!discordSdk?.commands?.authorize || !discordSdk?.commands?.authenticate) return;
+
+        try {
+          const auth = await discordSdk.commands.authorize({
+            client_id: discordClientId,
+            response_type: "code",
+            scope: DISCORD_ACTIVITY_SCOPES
+          });
+          const tokenResponse = await fetch(DISCORD_AUTH_TOKEN_URL, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json"
+            },
+            body: JSON.stringify({ code: auth.code })
+          });
+
+          if (!tokenResponse.ok) {
+            throw new Error(`Discord token exchange failed: ${tokenResponse.status}`);
+          }
+
+          const token = await tokenResponse.json();
+          await discordSdk.commands.authenticate({ access_token: token.access_token });
+          discordAuthenticated = true;
+          discordText.textContent = "authenticated";
+        } catch (error) {
+          discordAuthenticated = false;
+          discordText.textContent = "ready";
+          debugLog("discord auth failed", error);
+        }
+      }
+
+      async function updateDiscordActivityStatus() {
+        if (!discordSdk?.commands?.setActivity) return;
+
+        try {
+          await discordSdk.commands.setActivity({
+            activity: {
+              type: 0,
+              details: "Fireboy & Watergirl",
+              state: roomId ? `Room ${roomId}` : "Playing together",
+              party: {
+                id: roomId,
+                size: [Math.max(1, discordParticipants || currentPlayers.length || 1), 2]
+              },
+              instance: true
+            }
+          });
+        } catch (error) {
+          debugLog("discord status update failed", { authenticated: discordAuthenticated, error });
+        }
       }
 
       async function refreshDiscordParticipants() {
@@ -947,22 +979,10 @@
             ? payload
             : [];
         discordParticipants = participants.length;
+        updateDiscordActivityStatus();
         if (debugMode) {
           setPlayers(currentPlayers);
         }
-      }
-
-      async function inviteFriend() {
-        if (discordReady && discordSdk?.commands?.openInviteDialog) {
-          try {
-            await discordSdk.commands.openInviteDialog();
-            return;
-          } catch (error) {
-            debugLog("discord invite failed", error);
-          }
-        }
-
-        await copyInviteUrl();
       }
 
       async function copyInviteUrl() {
@@ -978,16 +998,6 @@
         enterFullscreen().catch((error) => {
           console.error("Fullscreen failed:", error);
         });
-      });
-
-      compactFullscreenButton?.addEventListener("click", () => {
-        enterFullscreen().catch((error) => {
-          console.error("Fullscreen failed:", error);
-        });
-      });
-
-      inviteFriendButton?.addEventListener("click", () => {
-        inviteFriend();
       });
 
       copyInviteButton?.addEventListener("click", async () => {
@@ -1009,6 +1019,10 @@
         button.addEventListener("lostpointercapture", handleTouchInput);
       }
 
+      for (const pointerEventName of ["pointerdown", "pointerup", "click", "dblclick", "contextmenu"]) {
+        target?.addEventListener(pointerEventName, blockGuestPointer, true);
+      }
+
       window.addEventListener("keydown", handleLocalKey, true);
       window.addEventListener("keyup", handleLocalKey, true);
 
@@ -1026,14 +1040,10 @@
 
       document.addEventListener("fullscreenchange", () => {
         const isFullscreen = Boolean(document.fullscreenElement);
-        fullscreenButton.textContent = isFullscreen ? "Exit" : "Fullscreen";
-        compactFullscreenButton.textContent = isFullscreen ? "Exit" : "Fullscreen";
-        hint.classList.toggle("is-hidden", isFullscreen);
+        if (fullscreenButton) {
+          fullscreenButton.textContent = isFullscreen ? "Exit" : "Fullscreen";
+        }
       });
-
-      setTimeout(() => {
-        hint?.classList.add("is-hidden");
-      }, 6000);
 
       boot().catch((error) => {
         console.error("Failed to load the SWF file:", error);

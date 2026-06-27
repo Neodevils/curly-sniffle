@@ -9,7 +9,12 @@ type PlayerRole = "fire" | "water" | "spectator";
 
 type Env = {
   ROOMS: DurableObjectNamespace;
+  DISCORD_CLIENT_ID?: string;
+  DISCORD_CLIENT_SECRET?: string;
+  DISCORD_REDIRECT_URI?: string;
 };
+
+const DEFAULT_DISCORD_CLIENT_ID = "1520427674860912660";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -29,6 +34,10 @@ export default {
           "content-type": "text/plain; charset=utf-8"
         }
       });
+    }
+
+    if (url.pathname === "/api/auth/discord/token" || url.pathname === "/auth/discord/token") {
+      return exchangeDiscordCode(request, env);
     }
 
     if (url.pathname === "/room" || url.pathname === "/api/room") {
@@ -55,6 +64,64 @@ export default {
     });
   }
 };
+
+async function exchangeDiscordCode(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse({ error: "method_not_allowed" }, 405);
+  }
+
+  if (!env.DISCORD_CLIENT_SECRET) {
+    return jsonResponse({ error: "discord_secret_not_configured" }, 500);
+  }
+
+  let body: { code?: unknown };
+  try {
+    body = (await request.json()) as { code?: unknown };
+  } catch {
+    return jsonResponse({ error: "bad_json" }, 400);
+  }
+
+  if (typeof body.code !== "string" || !body.code) {
+    return jsonResponse({ error: "missing_code" }, 400);
+  }
+
+  const form = new URLSearchParams({
+    client_id: env.DISCORD_CLIENT_ID || DEFAULT_DISCORD_CLIENT_ID,
+    client_secret: env.DISCORD_CLIENT_SECRET,
+    grant_type: "authorization_code",
+    code: body.code
+  });
+
+  // Discord Embedded App SDK authorization codes are exchanged server-side so the client secret never ships to the Activity iframe.
+  if (env.DISCORD_REDIRECT_URI) {
+    form.set("redirect_uri", env.DISCORD_REDIRECT_URI);
+  }
+
+  const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: form
+  });
+
+  const tokenText = await tokenResponse.text();
+  return new Response(tokenText, {
+    status: tokenResponse.status,
+    headers: {
+      "content-type": tokenResponse.headers.get("content-type") || "application/json; charset=utf-8"
+    }
+  });
+}
+
+function jsonResponse(payload: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8"
+    }
+  });
+}
 
 export class MultiplayerRoom {
   private sessions = new Map<

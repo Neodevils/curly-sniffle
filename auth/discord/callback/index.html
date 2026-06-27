@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Discord Auth Callback</title>
+    <script>
+      const target = new URL("../../../", window.location.href);
+      for (const [key, value] of new URLSearchParams(window.location.search)) {
+        target.searchParams.set(key, value);
+      }
+      window.location.replace(target.toString());
+    </script>
+  </head>
+  <body>
+    Redirecting...
+  </body>
+</html>

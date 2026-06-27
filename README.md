@@ -52,7 +52,17 @@ npm install -g wrangler
 wrangler deploy
 ```
 
-3. Use the deployed Worker domain as the multiplayer WebSocket server.
+3. Configure Discord OAuth secrets on the Worker. The client secret must stay server-side:
+
+```sh
+wrangler secret put DISCORD_CLIENT_SECRET
+wrangler secret put DISCORD_CLIENT_ID
+```
+
+`DISCORD_CLIENT_ID` can be omitted when using the default app id `1520427674860912660`.
+Only set `DISCORD_REDIRECT_URI` if Discord requires a redirect URI for a local callback flow.
+
+4. Use the deployed Worker domain as the multiplayer WebSocket server.
 
 Current Worker:
 
@@ -124,7 +134,17 @@ The page can run as a Discord Activity wrapper without changing the normal GitHu
 
 Discord's official Embedded App SDK exposes `instanceId` immediately after SDK construction. When `discordClientId` is provided and `room` is not provided, the wrapper uses that `instanceId` as the room id, so users joining the same Discord Activity instance land in the same Worker room.
 
-When the Discord SDK is ready, the small `Invite Friend` button calls Discord's native invite UI through `discordSdk.commands.openInviteDialog()`. Outside Discord, the button stays hidden and the page remains a normal browser game.
+When the Discord SDK is ready, the Activity requests OAuth permission through `authorize`, exchanges the code through the Worker at `/api/auth/discord/token`, authenticates the SDK session, and calls `setActivity` so Discord can show the Activity status.
+
+The top-right Activity UI only shows the local role:
+
+```txt
+Host - Fireboy
+Guest - Watergirl
+Spectator
+```
+
+The first active participant is the host/fire role. Only the host can click inside the Ruffle game surface, which keeps level selection and menu navigation under the room creator's control. The guest/water role can still send Watergirl movement input through the relay.
 
 Production browser URL:
 
@@ -171,5 +191,32 @@ guilds
 sdk.social_layer_presence
 activities.write
 ```
+
+Required Worker secret:
+
+```txt
+DISCORD_CLIENT_SECRET
+```
+
+Optional Worker vars/secrets:
+
+```txt
+DISCORD_CLIENT_ID
+DISCORD_REDIRECT_URI
+```
+
+If you use a redirect-based local OAuth flow, add this redirect URL in the Discord Developer Portal:
+
+```txt
+http://localhost:5173/auth/discord/callback
+```
+
+For the GitHub Pages deployment, add this production redirect URL if Discord asks for one:
+
+```txt
+https://neodevils.github.io/curly-sniffle/auth/discord/callback/
+```
+
+For the embedded Discord Activity flow, the app uses Discord's SDK `authorize` command inside the Activity iframe and exchanges the returned code through `/api/auth/discord/token`.
 
 For a real Discord Activity deployment, configure the app in the Discord Developer Portal and add the required Activity URL mappings/proxy settings for the GitHub Pages host and Worker host.
