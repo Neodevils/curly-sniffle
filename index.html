@@ -356,7 +356,7 @@
       const MULTIPLAYER_SERVER_URL = "wss://fireboy-watergirl.neodevils-contact.workers.dev/room";
       const DISCORD_ACTIVITY_SERVER_URL = "/api/room";
       const DISCORD_AUTH_TOKEN_URL = "/api/auth/discord/token";
-      const DISCORD_ACTIVITY_SCOPES = ["activities.write"];
+      const DISCORD_ACTIVITY_SCOPES = ["rpc.activities.write"];
       const ROLE_KEYMAP = {
         fire: {
           ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
@@ -977,7 +977,7 @@
         }
 
         try {
-          const { DiscordSDK, Events } = await import(DISCORD_SDK_MODULE_URL);
+          const { DiscordSDK } = await import(DISCORD_SDK_MODULE_URL);
           discordSdk = new DiscordSDK(discordClientId);
           discordText.textContent = "initializing";
 
@@ -992,8 +992,6 @@
           discordText.textContent = "ready";
           await authenticateDiscordActivity();
           await updateDiscordActivityStatus();
-          await refreshDiscordParticipants();
-          subscribeDiscordParticipants(Events);
         } catch (error) {
           discordReady = false;
           discordText.textContent = "unavailable";
@@ -1042,7 +1040,7 @@
       }
 
       async function updateDiscordActivityStatus() {
-        if (!discordSdk?.commands?.setActivity) return;
+        if (!discordAuthenticated || !discordSdk?.commands?.setActivity) return;
 
         try {
           const activePlayers = currentPlayers.filter((player) => player.role === "fire" || player.role === "water");

@@ -187,7 +187,7 @@ WebSocket: /api/room
 OAuth scopes to request when adding authentication:
 
 ```txt
-activities.write
+rpc.activities.write
 ```
 
 Required Worker secret:
