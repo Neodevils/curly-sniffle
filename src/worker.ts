@@ -9,7 +9,6 @@ type Env = {
   ROOMS: DurableObjectNamespace;
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
-  DISCORD_REDIRECT_URI?: string;
 };
 
 const DEFAULT_DISCORD_CLIENT_ID = "1520427674860912660";
@@ -72,9 +71,9 @@ async function exchangeDiscordCode(request: Request, env: Env): Promise<Response
     return jsonResponse({ error: "discord_secret_not_configured" }, 500);
   }
 
-  let body: { code?: unknown };
+  let body: { code?: unknown; redirect_uri?: unknown };
   try {
-    body = (await request.json()) as { code?: unknown };
+    body = (await request.json()) as { code?: unknown; redirect_uri?: unknown };
   } catch {
     return jsonResponse({ error: "bad_json" }, 400);
   }
@@ -90,9 +89,10 @@ async function exchangeDiscordCode(request: Request, env: Env): Promise<Response
     code: body.code
   });
 
-  // Discord Embedded App SDK authorization codes are exchanged server-side so the client secret never ships to the Activity iframe.
-  if (env.DISCORD_REDIRECT_URI) {
-    form.set("redirect_uri", env.DISCORD_REDIRECT_URI);
+  // Discord Embedded App SDK authorization codes are exchanged without redirect_uri.
+  // Only include it for an explicit redirect-based flow where the client also sent the same URI.
+  if (typeof body.redirect_uri === "string" && body.redirect_uri) {
+    form.set("redirect_uri", body.redirect_uri);
   }
 
   const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
@@ -325,9 +325,6 @@ export class MultiplayerRoom {
 
   private removeSession(sessionId: string): void {
     if (this.sessions.delete(sessionId)) {
-      if (this.gameStarted && this.isRoleFree("water")) {
-        this.promoteNextSpectatorToWater();
-      }
       this.broadcastPresence();
     }
   }
@@ -340,7 +337,6 @@ export class MultiplayerRoom {
 
     if (!this.gameStarted) {
       this.gameStarted = true;
-      this.promoteNextSpectatorToWater();
     }
 
     this.broadcast({
@@ -350,22 +346,6 @@ export class MultiplayerRoom {
     this.broadcastPresence();
   }
 
-  private promoteNextSpectatorToWater(): void {
-    if (!this.isRoleFree("water")) return;
-
-    const spectator = Array.from(this.sessions.values())
-      .filter((session) => session.role === "spectator" && session.socket.readyState === WebSocket.OPEN)
-      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
-
-    if (!spectator) return;
-    spectator.role = "water";
-    this.send(spectator, {
-      type: "role",
-      role: spectator.role,
-      gameStarted: this.gameStarted,
-      players: this.players()
-    });
-  }
 }
 
 function sanitizeRoom(value: string | null): string {

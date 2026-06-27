@@ -381,7 +381,7 @@
       const MULTIPLAYER_SERVER_URL = "wss://fireboy-watergirl.neodevils-contact.workers.dev/room";
       const DISCORD_ACTIVITY_SERVER_URL = "/api/room";
       const DISCORD_AUTH_TOKEN_URL = "/api/auth/discord/token";
-      const DISCORD_ACTIVITY_SCOPES = ["rpc.activities.write"];
+      const DISCORD_ACTIVITY_SCOPES = ["identify", "rpc.activities.write"];
       const ROLE_KEYMAP = {
         fire: {
           ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
@@ -395,6 +395,28 @@
         }
       };
       const CONTROLLED_CODES = new Set(Object.values(ROLE_KEYMAP).flatMap((mapping) => Object.keys(mapping)));
+      const KEY_CODE_TO_CODE = {
+        37: "ArrowLeft",
+        38: "ArrowUp",
+        39: "ArrowRight",
+        65: "KeyA",
+        68: "KeyD",
+        87: "KeyW"
+      };
+      const KEY_VALUE_TO_CODE = {
+        ArrowLeft: "ArrowLeft",
+        Left: "ArrowLeft",
+        ArrowUp: "ArrowUp",
+        Up: "ArrowUp",
+        ArrowRight: "ArrowRight",
+        Right: "ArrowRight",
+        a: "KeyA",
+        A: "KeyA",
+        d: "KeyD",
+        D: "KeyD",
+        w: "KeyW",
+        W: "KeyW"
+      };
       const params = new URLSearchParams(window.location.search);
       const isDiscordActivity =
         window.location.hostname.endsWith(".discordsays.com") ||
@@ -445,6 +467,7 @@
       const localHeldCodes = new Set();
       const remoteHeldCodes = new Set();
       const touchHeld = new Map();
+      const keyboardListenerTargets = new Set();
 
       debugOverlay?.classList.toggle("is-hidden", !debugMode);
       roomText.textContent = roomId;
@@ -606,6 +629,7 @@
         rufflePlayer = player;
 
         await player.ruffle().load(FILE_PATH);
+        installKeyboardListeners();
         focusRufflePlayer();
       }
 
@@ -618,11 +642,35 @@
 
       function ruffleEventTargets() {
         const targets = [rufflePlayer];
+        if (rufflePlayer?.shadowRoot) targets.push(rufflePlayer.shadowRoot);
         const shadowCanvas = rufflePlayer?.shadowRoot?.querySelector("canvas");
         if (shadowCanvas) targets.push(shadowCanvas);
         if (target) targets.push(target);
+        if (document.activeElement) targets.push(document.activeElement);
         targets.push(document, window);
-        return targets.filter(Boolean);
+        return Array.from(new Set(targets.filter(Boolean)));
+      }
+
+      function installKeyboardListeners() {
+        for (const listenerTarget of ruffleEventTargets()) {
+          if (keyboardListenerTargets.has(listenerTarget) || !listenerTarget.addEventListener) continue;
+          keyboardListenerTargets.add(listenerTarget);
+          listenerTarget.addEventListener("keydown", handleLocalKey, true);
+          listenerTarget.addEventListener("keyup", handleLocalKey, true);
+        }
+      }
+
+      function normalizeEventCode(event) {
+        if (event.code && CONTROLLED_CODES.has(event.code)) {
+          return event.code;
+        }
+
+        if (event.key && KEY_VALUE_TO_CODE[event.key]) {
+          return KEY_VALUE_TO_CODE[event.key];
+        }
+
+        const legacyKeyCode = event.keyCode || event.which;
+        return KEY_CODE_TO_CODE[legacyKeyCode] || event.code || "";
       }
 
       async function enterFullscreen() {
@@ -763,7 +811,9 @@
 
       function handleLocalKey(event) {
         if (!event.isTrusted) return;
-        const code = event.code;
+        installKeyboardListeners();
+        const code = normalizeEventCode(event);
+        if (!code) return;
 
         if (shouldBlockLocalCode(code)) {
           event.preventDefault();
@@ -778,6 +828,7 @@
           if (event.repeat || localHeldCodes.has(code)) return;
           localHeldCodes.add(code);
         } else {
+          if (!localHeldCodes.has(code)) return;
           localHeldCodes.delete(code);
         }
 
@@ -815,6 +866,12 @@
           const keyboardEvent = new KeyboardEvent(action, {
             key: keyInfo.key,
             code,
+            keyCode: keyInfo.keyCode,
+            which: keyInfo.keyCode,
+            charCode: 0,
+            location: 0,
+            repeat: false,
+            view: window,
             bubbles: true,
             cancelable: true
           });
@@ -902,7 +959,9 @@
         focusRufflePlayer();
 
         if (event.type === "pointerdown") {
-          button.setPointerCapture?.(event.pointerId);
+          if (typeof event.pointerId === "number") {
+            button.setPointerCapture?.(event.pointerId);
+          }
           if (touchHeld.has(event.pointerId)) return;
           touchHeld.set(event.pointerId, { button, role, code });
           button.classList.add("is-active");
@@ -924,6 +983,20 @@
             sendInput("keyup", held.role, held.code);
           }
         }
+      }
+
+      function handleLegacyTouchInput(event) {
+        if (!shouldUseTouchControls) return;
+
+        const touch = event.changedTouches?.[0];
+        if (!touch) return;
+
+        handleTouchInput({
+          type: event.type === "touchstart" ? "pointerdown" : "pointerup",
+          currentTarget: event.currentTarget,
+          pointerId: `touch:${touch.identifier}`,
+          preventDefault: () => event.preventDefault()
+        });
       }
 
       async function initDiscordActivity() {
@@ -969,6 +1042,8 @@
           const auth = await discordSdk.commands.authorize({
             client_id: discordClientId,
             response_type: "code",
+            state: "",
+            prompt: "none",
             scope: DISCORD_ACTIVITY_SCOPES
           });
           const tokenResponse = await fetch(DISCORD_AUTH_TOKEN_URL, {
@@ -984,7 +1059,14 @@
           }
 
           const token = await tokenResponse.json();
-          await discordSdk.commands.authenticate({ access_token: token.access_token });
+          if (typeof token.access_token !== "string" || !token.access_token) {
+            throw new Error("Discord token exchange did not return an access token");
+          }
+
+          const authenticated = await discordSdk.commands.authenticate({ access_token: token.access_token });
+          if (!authenticated) {
+            throw new Error("Discord authenticate command returned no user");
+          }
           discordAuthenticated = true;
           discordText.textContent = "authenticated";
         } catch (error) {
@@ -1090,12 +1172,18 @@
         button.addEventListener("pointerup", handleTouchInput);
         button.addEventListener("pointercancel", handleTouchInput);
         button.addEventListener("lostpointercapture", handleTouchInput);
+        if (!window.PointerEvent) {
+          button.addEventListener("touchstart", handleLegacyTouchInput, { passive: false });
+          button.addEventListener("touchend", handleLegacyTouchInput, { passive: false });
+          button.addEventListener("touchcancel", handleLegacyTouchInput, { passive: false });
+        }
       }
 
       target?.addEventListener("pointerup", notifyHostGameStart, true);
+      target?.addEventListener("pointerdown", installKeyboardListeners, true);
+      document.addEventListener("focusin", installKeyboardListeners, true);
 
-      window.addEventListener("keydown", handleLocalKey, true);
-      window.addEventListener("keyup", handleLocalKey, true);
+      installKeyboardListeners();
 
       window.addEventListener("blur", () => {
         releaseLocalHeldKeys();

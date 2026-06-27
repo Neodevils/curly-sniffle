@@ -60,7 +60,7 @@ wrangler secret put DISCORD_CLIENT_ID
 ```
 
 `DISCORD_CLIENT_ID` can be omitted when using the default app id `1520427674860912660`.
-Only set `DISCORD_REDIRECT_URI` if Discord requires a redirect URI for a local callback flow.
+Do not set `DISCORD_REDIRECT_URI` for the embedded Activity SDK flow. The SDK handles returning to the Activity frame, and the token exchange should omit `redirect_uri` unless a separate redirect-based client flow sends the same value explicitly.
 
 4. Use the deployed Worker domain as the multiplayer WebSocket server.
 
@@ -145,6 +145,7 @@ Spectator
 ```
 
 The first active participant is the host/fire role. The second participant is the guest/water role. Both participants keep their own local Ruffle screen, choose the same level locally, and then send only their assigned movement input through the relay.
+Additional participants join as spectators and cannot send movement input.
 
 Production browser URL:
 
@@ -186,6 +187,7 @@ WebSocket: /api/room
 OAuth scopes to request when adding authentication:
 
 ```txt
+identify
 rpc.activities.write
 ```
 
@@ -195,11 +197,10 @@ Required Worker secret:
 DISCORD_CLIENT_SECRET
 ```
 
-Optional Worker vars/secrets:
+Optional Worker var:
 
 ```txt
 DISCORD_CLIENT_ID
-DISCORD_REDIRECT_URI
 ```
 
 If you use a redirect-based local OAuth flow, add this redirect URL in the Discord Developer Portal:
