@@ -71,6 +71,33 @@
         -webkit-backdrop-filter: blur(14px);
       }
 
+      .player-ui {
+        position: fixed;
+        top: max(12px, env(safe-area-inset-top));
+        right: max(12px, env(safe-area-inset-right));
+        z-index: 11;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--glass);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+
+      .role-pill {
+        min-width: 0;
+        max-width: 150px;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       .status-row,
       .actions {
         display: flex;
@@ -161,6 +188,17 @@
       .button:disabled {
         cursor: not-allowed;
         opacity: 0.48;
+      }
+
+      .invite-button {
+        min-width: 104px;
+        background: rgba(88, 101, 242, 0.88);
+        border-color: rgba(255, 255, 255, 0.2);
+        font-weight: 750;
+      }
+
+      .invite-button:hover {
+        background: rgba(88, 101, 242, 1);
       }
 
       .hint {
@@ -267,7 +305,13 @@
   <body>
     <div id="player" aria-label="Flash game player"></div>
 
-    <section class="overlay" aria-label="Multiplayer status">
+    <section id="playerUi" class="player-ui" aria-label="Game controls">
+      <span id="compactRoleText" class="role-pill">Single player</span>
+      <button id="inviteFriendButton" class="button invite-button is-hidden" type="button">Invite Friend</button>
+      <button id="compactFullscreenButton" class="button" type="button">Fullscreen</button>
+    </section>
+
+    <section id="debugOverlay" class="overlay is-hidden" aria-label="Multiplayer debug status">
       <div class="status-row">
         <span class="status"><span id="statusDot" class="dot"></span><span id="statusText">Single player</span></span>
       </div>
@@ -304,6 +348,7 @@
       const FILE_PATH = "./swf/game.swf";
       const DEBUG_MULTIPLAYER = false;
       const DISCORD_SDK_MODULE_URL = "https://esm.sh/@discord/embedded-app-sdk@latest";
+      const DISCORD_READY_TIMEOUT_MS = 3500;
       const ROLE_KEYMAP = {
         fire: {
           ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
@@ -323,8 +368,12 @@
       const preferredRole = normalizeRole(params.get("role"));
       const serverUrl = normalizeServerUrl(params.get("server"));
       const discordClientId = params.get("discordClientId") || params.get("client_id") || "";
+      const debugMode = params.get("debug") === "1";
       const target = document.querySelector("#player");
+      const debugOverlay = document.querySelector("#debugOverlay");
       const fullscreenButton = document.querySelector("#fullscreenButton");
+      const compactFullscreenButton = document.querySelector("#compactFullscreenButton");
+      const inviteFriendButton = document.querySelector("#inviteFriendButton");
       const copyInviteButton = document.querySelector("#copyInviteButton");
       const reconnectButton = document.querySelector("#reconnectButton");
       const hint = document.querySelector("#hint");
@@ -333,6 +382,7 @@
       const statusText = document.querySelector("#statusText");
       const roomText = document.querySelector("#roomText");
       const roleText = document.querySelector("#roleText");
+      const compactRoleText = document.querySelector("#compactRoleText");
       const discordText = document.querySelector("#discordText");
       const playersText = document.querySelector("#playersText");
       const touchControls = document.querySelector("#touchControls");
@@ -349,9 +399,14 @@
       let assignedRole = "single-player";
       let seq = 0;
       let discordSdk = null;
+      let discordReady = false;
+      let discordParticipants = 0;
+      let currentPlayers = [];
       const localHeldCodes = new Set();
+      const remoteHeldCodes = new Set();
       const touchHeld = new Map();
 
+      debugOverlay?.classList.toggle("is-hidden", !debugMode);
       roomText.textContent = roomId;
       syncRoomUrl();
 
@@ -435,14 +490,24 @@
       }
 
       function setPlayers(players = []) {
+        currentPlayers = players;
         const active = players.filter((player) => player.role === "fire" || player.role === "water");
-        playersText.textContent = `${active.length}/2 active, ${Math.max(0, players.length - active.length)} spectator`;
+        const discordSuffix = discordParticipants ? `, ${discordParticipants} Discord` : "";
+        playersText.textContent = `${active.length}/2 active, ${Math.max(0, players.length - active.length)} spectator${discordSuffix}`;
       }
 
       function updateRole(role) {
         assignedRole = role || "single-player";
         roleText.textContent = assignedRole;
+        compactRoleText.textContent = roleLabel(assignedRole);
         updateTouchControls();
+      }
+
+      function roleLabel(role) {
+        if (role === "fire") return "You are Fireboy";
+        if (role === "water") return "You are Watergirl";
+        if (role === "spectator") return "Spectator";
+        return "Single player";
       }
 
       function updateTouchControls() {
@@ -510,8 +575,7 @@
         clearInterval(heartbeatTimer);
 
         if (!serverUrl) {
-          setupMessage.textContent = "Multiplayer server is not configured. Add ?server=wss://YOUR_WORKER_DOMAIN/room to enable room input relay.";
-          setupMessage.classList.add("is-visible");
+          setupMessage.classList.remove("is-visible");
           reconnectButton.disabled = true;
           updateRole("single-player");
           setStatus("disconnected", "Single player");
@@ -542,6 +606,8 @@
 
         socket.addEventListener("close", () => {
           clearInterval(heartbeatTimer);
+          releaseRemoteHeldKeys();
+          releaseTouchHeldKeys();
           setStatus("disconnected", "Disconnected");
           debugLog("socket closed");
           reconnectTimer = window.setTimeout(() => {
@@ -645,6 +711,12 @@
 
         const keyInfo = ROLE_KEYMAP[message.role][message.code];
         debugLog("remote input", message.action, message.role, message.code);
+        const remoteHeldKey = `${message.role}:${message.code}`;
+        if (message.action === "keydown") {
+          remoteHeldCodes.add(remoteHeldKey);
+        } else {
+          remoteHeldCodes.delete(remoteHeldKey);
+        }
         dispatchKeyboard(message.action, message.code, keyInfo);
         focusRufflePlayer();
       }
@@ -686,6 +758,41 @@
           seq: ++seq,
           t: Date.now()
         });
+      }
+
+      function releaseLocalHeldKeys() {
+        for (const code of localHeldCodes) {
+          if (!canSendCode(code)) continue;
+          const keyInfo = ROLE_KEYMAP[assignedRole][code];
+          dispatchKeyboard("keyup", code, keyInfo);
+          sendInput("keyup", assignedRole, code);
+        }
+        localHeldCodes.clear();
+      }
+
+      function releaseRemoteHeldKeys() {
+        for (const remoteHeldKey of remoteHeldCodes) {
+          const [role, code] = remoteHeldKey.split(":");
+          const keyInfo = ROLE_KEYMAP[role]?.[code];
+          if (keyInfo) {
+            dispatchKeyboard("keyup", code, keyInfo);
+          }
+        }
+        remoteHeldCodes.clear();
+      }
+
+      function releaseTouchHeldKeys() {
+        for (const held of touchHeld.values()) {
+          held.button.classList.remove("is-active");
+          const keyInfo = ROLE_KEYMAP[held.role]?.[held.code];
+          if (keyInfo) {
+            dispatchKeyboard("keyup", held.code, keyInfo);
+            if (assignedRole === held.role) {
+              sendInput("keyup", held.role, held.code);
+            }
+          }
+        }
+        touchHeld.clear();
       }
 
       function handleTouchInput(event) {
@@ -737,7 +844,7 @@
         }
 
         try {
-          const { DiscordSDK } = await import(DISCORD_SDK_MODULE_URL);
+          const { DiscordSDK, Events } = await import(DISCORD_SDK_MODULE_URL);
           discordSdk = new DiscordSDK(discordClientId);
           discordText.textContent = "initializing";
 
@@ -747,11 +854,77 @@
             syncRoomUrl();
           }
 
-          await discordSdk.ready();
+          await withTimeout(discordSdk.ready(), DISCORD_READY_TIMEOUT_MS);
+          discordReady = true;
           discordText.textContent = "ready";
+          inviteFriendButton?.classList.remove("is-hidden");
+          await refreshDiscordParticipants();
+          subscribeDiscordParticipants(Events);
         } catch (error) {
+          discordReady = false;
           discordText.textContent = "unavailable";
           debugLog("discord init failed", error);
+        }
+      }
+
+      function withTimeout(promise, timeoutMs) {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => window.setTimeout(() => reject(new Error("Discord SDK ready timed out")), timeoutMs))
+        ]);
+      }
+
+      async function refreshDiscordParticipants() {
+        if (!discordSdk?.commands?.getInstanceConnectedParticipants) return;
+        try {
+          const participants = await discordSdk.commands.getInstanceConnectedParticipants();
+          updateDiscordParticipants(participants);
+        } catch (error) {
+          debugLog("discord participants fetch failed", error);
+        }
+      }
+
+      function subscribeDiscordParticipants(Events) {
+        const eventName = Events?.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE || "ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE";
+        if (!discordSdk?.subscribe) return;
+        try {
+          discordSdk.subscribe(eventName, updateDiscordParticipants);
+        } catch (error) {
+          debugLog("discord participants subscribe failed", error);
+        }
+      }
+
+      function updateDiscordParticipants(payload) {
+        const participants = Array.isArray(payload?.participants)
+          ? payload.participants
+          : Array.isArray(payload)
+            ? payload
+            : [];
+        discordParticipants = participants.length;
+        if (debugMode) {
+          setPlayers(currentPlayers);
+        }
+      }
+
+      async function inviteFriend() {
+        if (discordReady && discordSdk?.commands?.openInviteDialog) {
+          try {
+            await discordSdk.commands.openInviteDialog();
+            return;
+          } catch (error) {
+            debugLog("discord invite failed", error);
+          }
+        }
+
+        await copyInviteUrl();
+      }
+
+      async function copyInviteUrl() {
+        const text = inviteUrl();
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (error) {
+          window.prompt("Invite URL", text);
         }
       }
 
@@ -761,17 +934,22 @@
         });
       });
 
+      compactFullscreenButton?.addEventListener("click", () => {
+        enterFullscreen().catch((error) => {
+          console.error("Fullscreen failed:", error);
+        });
+      });
+
+      inviteFriendButton?.addEventListener("click", () => {
+        inviteFriend();
+      });
+
       copyInviteButton?.addEventListener("click", async () => {
-        const text = inviteUrl();
-        try {
-          await navigator.clipboard.writeText(text);
-          copyInviteButton.textContent = "Copied";
-          window.setTimeout(() => {
-            copyInviteButton.textContent = "Copy invite URL";
-          }, 1400);
-        } catch (error) {
-          window.prompt("Invite URL", text);
-        }
+        await copyInviteUrl();
+        copyInviteButton.textContent = "Copied";
+        window.setTimeout(() => {
+          copyInviteButton.textContent = "Copy invite URL";
+        }, 1400);
       });
 
       reconnectButton?.addEventListener("click", () => {
@@ -789,17 +967,21 @@
       window.addEventListener("keyup", handleLocalKey, true);
 
       window.addEventListener("blur", () => {
-        for (const code of localHeldCodes) {
-          if (canSendCode(code)) {
-            sendInput("keyup", assignedRole, code);
-          }
-        }
-        localHeldCodes.clear();
+        releaseLocalHeldKeys();
+        releaseRemoteHeldKeys();
+        releaseTouchHeldKeys();
+      });
+
+      window.addEventListener("pagehide", () => {
+        releaseLocalHeldKeys();
+        releaseRemoteHeldKeys();
+        releaseTouchHeldKeys();
       });
 
       document.addEventListener("fullscreenchange", () => {
         const isFullscreen = Boolean(document.fullscreenElement);
         fullscreenButton.textContent = isFullscreen ? "Exit" : "Fullscreen";
+        compactFullscreenButton.textContent = isFullscreen ? "Exit" : "Fullscreen";
         hint.classList.toggle("is-hidden", isFullscreen);
       });
 
