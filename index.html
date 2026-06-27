@@ -10,8 +10,12 @@
       :root {
         color-scheme: dark;
         --text: #f4f7fb;
-        --glass: rgba(10, 12, 18, 0.58);
+        --muted: rgba(244, 247, 251, 0.72);
+        --glass: rgba(10, 12, 18, 0.62);
         --line: rgba(255, 255, 255, 0.16);
+        --ok: #58d68d;
+        --warn: #f7c948;
+        --bad: #ff6b6b;
       }
 
       * {
@@ -47,33 +51,116 @@
         width: 100%;
         height: 100%;
         display: block;
+        outline: none;
       }
 
-      .controls {
+      .overlay {
         position: fixed;
         top: max(12px, env(safe-area-inset-top));
         right: max(12px, env(safe-area-inset-right));
         z-index: 10;
-        display: flex;
-        gap: 8px;
-      }
-
-      .button {
-        min-height: 38px;
-        padding: 0 13px;
+        width: min(360px, calc(100vw - 24px));
+        padding: 10px;
         border: 1px solid var(--line);
-        border-radius: 999px;
+        border-radius: 8px;
         background: var(--glass);
         color: var(--text);
-        font: inherit;
-        font-size: 13px;
-        cursor: pointer;
+        font-size: 12px;
+        line-height: 1.35;
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
       }
 
+      .status-row,
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-row {
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        font-weight: 650;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--warn);
+        flex: 0 0 auto;
+      }
+
+      .dot.connected {
+        background: var(--ok);
+      }
+
+      .dot.disconnected,
+      .dot.error {
+        background: var(--bad);
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 3px 8px;
+        margin-bottom: 10px;
+        color: var(--muted);
+      }
+
+      .meta strong {
+        color: var(--text);
+        font-weight: 650;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .setup {
+        display: none;
+        margin-bottom: 10px;
+        padding: 8px;
+        border: 1px solid rgba(247, 201, 72, 0.38);
+        border-radius: 6px;
+        color: #fff2bd;
+        background: rgba(247, 201, 72, 0.12);
+      }
+
+      .setup.is-visible {
+        display: block;
+      }
+
+      .actions {
+        flex-wrap: wrap;
+      }
+
+      .button {
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
       .button:hover {
-        background: rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      .button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
       }
 
       .hint {
@@ -84,13 +171,78 @@
         max-width: min(420px, calc(100vw - 24px));
         padding: 10px 12px;
         border: 1px solid var(--line);
-        border-radius: 14px;
+        border-radius: 8px;
         background: var(--glass);
         color: rgba(244, 247, 251, 0.82);
         font-size: 12px;
         line-height: 1.35;
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
+      }
+
+      .touch-controls {
+        position: fixed;
+        inset-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        z-index: 9;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 18px;
+        pointer-events: none;
+      }
+
+      .dpad {
+        display: grid;
+        grid-template-columns: repeat(3, 48px);
+        grid-template-rows: repeat(2, 48px);
+        gap: 8px;
+        pointer-events: auto;
+      }
+
+      .dpad[data-role="water"] {
+        margin-left: auto;
+      }
+
+      .pad-button {
+        width: 48px;
+        height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        font: inherit;
+        font-size: 18px;
+        font-weight: 750;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+
+      .pad-button:active,
+      .pad-button.is-active {
+        background: rgba(88, 214, 141, 0.28);
+      }
+
+      .pad-button.up {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      .pad-button.left {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      .pad-button.right {
+        grid-column: 3;
+        grid-row: 2;
+      }
+
+      .dpad.is-hidden {
+        display: none;
       }
 
       .is-hidden {
@@ -115,17 +267,172 @@
   <body>
     <div id="player" aria-label="Flash game player"></div>
 
-    <div class="controls">
-      <button id="fullscreenButton" class="button" type="button">Fullscreen</button>
-    </div>
+    <section class="overlay" aria-label="Multiplayer status">
+      <div class="status-row">
+        <span class="status"><span id="statusDot" class="dot"></span><span id="statusText">Single player</span></span>
+      </div>
+      <div id="setupMessage" class="setup"></div>
+      <div class="meta">
+        <span>Room</span><strong id="roomText">-</strong>
+        <span>Role</span><strong id="roleText">single-player</strong>
+        <span>Discord</span><strong id="discordText">not detected</strong>
+        <span>Players</span><strong id="playersText">-</strong>
+      </div>
+      <div class="actions">
+        <button id="copyInviteButton" class="button" type="button">Copy invite URL</button>
+        <button id="reconnectButton" class="button" type="button">Reconnect</button>
+        <button id="fullscreenButton" class="button" type="button">Fullscreen</button>
+      </div>
+    </section>
 
     <div id="hint" class="hint">Fullscreen için sağ üstteki butona bas. Mobilde tarayıcı bazen tam ekran iznini kısıtlayabilir.</div>
 
+    <div id="touchControls" class="touch-controls" aria-label="Touch controls">
+      <div class="dpad" data-role="fire" aria-label="Fireboy touch controls">
+        <button class="pad-button up" type="button" data-role="fire" data-code="ArrowUp" aria-label="Fireboy jump">↑</button>
+        <button class="pad-button left" type="button" data-role="fire" data-code="ArrowLeft" aria-label="Fireboy left">←</button>
+        <button class="pad-button right" type="button" data-role="fire" data-code="ArrowRight" aria-label="Fireboy right">→</button>
+      </div>
+      <div class="dpad" data-role="water" aria-label="Watergirl touch controls">
+        <button class="pad-button up" type="button" data-role="water" data-code="KeyW" aria-label="Watergirl jump">W</button>
+        <button class="pad-button left" type="button" data-role="water" data-code="KeyA" aria-label="Watergirl left">A</button>
+        <button class="pad-button right" type="button" data-role="water" data-code="KeyD" aria-label="Watergirl right">D</button>
+      </div>
+    </div>
+
     <script>
       const FILE_PATH = "./swf/game.swf";
+      const DEBUG_MULTIPLAYER = false;
+      const DISCORD_SDK_MODULE_URL = "https://esm.sh/@discord/embedded-app-sdk@latest";
+      const ROLE_KEYMAP = {
+        fire: {
+          ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
+          ArrowRight: { key: "ArrowRight", keyCode: 39 },
+          ArrowUp: { key: "ArrowUp", keyCode: 38 }
+        },
+        water: {
+          KeyA: { key: "a", keyCode: 65 },
+          KeyD: { key: "d", keyCode: 68 },
+          KeyW: { key: "w", keyCode: 87 }
+        }
+      };
+      const CONTROLLED_CODES = new Set(Object.values(ROLE_KEYMAP).flatMap((mapping) => Object.keys(mapping)));
+      const params = new URLSearchParams(window.location.search);
+      const explicitRoomId = sanitizeRoom(params.get("room"));
+      let roomId = explicitRoomId || makeRoomId();
+      const preferredRole = normalizeRole(params.get("role"));
+      const serverUrl = normalizeServerUrl(params.get("server"));
+      const discordClientId = params.get("discordClientId") || params.get("client_id") || "";
       const target = document.querySelector("#player");
       const fullscreenButton = document.querySelector("#fullscreenButton");
+      const copyInviteButton = document.querySelector("#copyInviteButton");
+      const reconnectButton = document.querySelector("#reconnectButton");
       const hint = document.querySelector("#hint");
+      const setupMessage = document.querySelector("#setupMessage");
+      const statusDot = document.querySelector("#statusDot");
+      const statusText = document.querySelector("#statusText");
+      const roomText = document.querySelector("#roomText");
+      const roleText = document.querySelector("#roleText");
+      const discordText = document.querySelector("#discordText");
+      const playersText = document.querySelector("#playersText");
+      const dpads = Array.from(document.querySelectorAll(".dpad"));
+      const padButtons = Array.from(document.querySelectorAll(".pad-button"));
+
+      let rufflePlayer = null;
+      let socket = null;
+      let heartbeatTimer = 0;
+      let reconnectTimer = 0;
+      let sessionId = "";
+      let assignedRole = "single-player";
+      let seq = 0;
+      let discordSdk = null;
+      const localHeldCodes = new Set();
+      const touchHeld = new Map();
+
+      roomText.textContent = roomId;
+      syncRoomUrl();
+
+      function debugLog(...args) {
+        if (DEBUG_MULTIPLAYER) {
+          console.debug("[multiplayer]", ...args);
+        }
+      }
+
+      function sanitizeRoom(value) {
+        if (!value) return "";
+        return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+      }
+
+      function makeRoomId() {
+        const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+        const bytes = new Uint8Array(6);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+      }
+
+      function normalizeRole(value) {
+        return value === "fire" || value === "water" ? value : "";
+      }
+
+      function normalizeServerUrl(value) {
+        if (!value) return "";
+        const trimmed = value.trim();
+        if (!trimmed) return "";
+        if (/^wss?:\/\//i.test(trimmed)) return trimmed;
+        if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/^http/i, "ws");
+        return `wss://${trimmed}`;
+      }
+
+      function syncRoomUrl() {
+        if (params.get("room") === roomId) return;
+        params.set("room", roomId);
+        const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+        window.history.replaceState(null, "", nextUrl);
+      }
+
+      function inviteUrl() {
+        const invite = new URL(window.location.href);
+        invite.searchParams.set("room", roomId);
+        if (serverUrl) {
+          invite.searchParams.set("server", serverUrl);
+        }
+        invite.searchParams.delete("role");
+        return invite.toString();
+      }
+
+      function websocketUrl() {
+        if (!serverUrl) return "";
+        const url = new URL(serverUrl);
+        url.searchParams.set("room", roomId);
+        if (preferredRole) {
+          url.searchParams.set("preferredRole", preferredRole);
+        }
+        return url.toString();
+      }
+
+      function setStatus(state, text) {
+        statusDot.className = `dot ${state}`;
+        statusText.textContent = text;
+      }
+
+      function setPlayers(players = []) {
+        const active = players.filter((player) => player.role === "fire" || player.role === "water");
+        playersText.textContent = `${active.length}/2 active, ${Math.max(0, players.length - active.length)} spectator`;
+      }
+
+      function updateRole(role) {
+        assignedRole = role || "single-player";
+        roleText.textContent = assignedRole;
+        updateTouchControls();
+      }
+
+      function updateTouchControls() {
+        for (const dpad of dpads) {
+          const role = dpad.dataset.role;
+          const shouldShow = assignedRole === "single-player" || assignedRole === role;
+          dpad.classList.toggle("is-hidden", !shouldShow);
+        }
+      }
 
       async function boot() {
         const api = window.RufflePlayer?.newest?.();
@@ -136,9 +443,28 @@
         }
 
         const player = api.createPlayer();
+        player.tabIndex = 0;
         target.appendChild(player);
+        rufflePlayer = player;
 
         await player.ruffle().load(FILE_PATH);
+        focusRufflePlayer();
+      }
+
+      function focusRufflePlayer() {
+        requestAnimationFrame(() => {
+          const focusTarget = rufflePlayer?.shadowRoot?.querySelector("canvas") || rufflePlayer;
+          focusTarget?.focus?.({ preventScroll: true });
+        });
+      }
+
+      function ruffleEventTargets() {
+        const targets = [rufflePlayer];
+        const shadowCanvas = rufflePlayer?.shadowRoot?.querySelector("canvas");
+        if (shadowCanvas) targets.push(shadowCanvas);
+        if (target) targets.push(target);
+        targets.push(document, window);
+        return targets.filter(Boolean);
       }
 
       async function enterFullscreen() {
@@ -154,10 +480,294 @@
         }
       }
 
+      function connect() {
+        clearTimeout(reconnectTimer);
+        clearInterval(heartbeatTimer);
+
+        if (!serverUrl) {
+          setupMessage.textContent = "Multiplayer server is not configured. Add ?server=wss://YOUR_WORKER_DOMAIN/room to enable room input relay.";
+          setupMessage.classList.add("is-visible");
+          reconnectButton.disabled = true;
+          updateRole("single-player");
+          setStatus("disconnected", "Single player");
+          playersText.textContent = "-";
+          return;
+        }
+
+        setupMessage.classList.remove("is-visible");
+        reconnectButton.disabled = false;
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.close(1000, "reconnect");
+        }
+
+        const url = websocketUrl();
+        setStatus("", "Connecting");
+        debugLog("connect", url);
+        socket = new WebSocket(url);
+
+        socket.addEventListener("open", () => {
+          setStatus("connected", "Connected");
+          heartbeatTimer = window.setInterval(() => sendRaw({ type: "ping", t: Date.now() }), 15000);
+        });
+
+        socket.addEventListener("message", (event) => {
+          handleServerMessage(event.data);
+        });
+
+        socket.addEventListener("close", () => {
+          clearInterval(heartbeatTimer);
+          setStatus("disconnected", "Disconnected");
+          debugLog("socket closed");
+          reconnectTimer = window.setTimeout(() => {
+            if (serverUrl) connect();
+          }, 2500);
+        });
+
+        socket.addEventListener("error", (error) => {
+          setStatus("error", "Connection error");
+          debugLog("socket error", error);
+        });
+      }
+
+      function sendRaw(message) {
+        if (socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify(message));
+        }
+      }
+
+      function handleServerMessage(raw) {
+        let message = null;
+        try {
+          message = JSON.parse(raw);
+        } catch (error) {
+          debugLog("invalid server message", raw, error);
+          return;
+        }
+
+        if (message.type === "welcome") {
+          sessionId = message.sessionId || "";
+          updateRole(message.role);
+          roomText.textContent = message.room || roomId;
+          setPlayers(message.players || []);
+          focusRufflePlayer();
+          return;
+        }
+
+        if (message.type === "presence") {
+          setPlayers(message.players || []);
+          return;
+        }
+
+        if (message.type === "pong") {
+          debugLog("pong", message.t);
+          return;
+        }
+
+        if (message.type === "input" && message.sessionId !== sessionId) {
+          dispatchRemoteInput(message);
+        }
+      }
+
+      function canSendCode(code) {
+        return assignedRole === "fire" || assignedRole === "water"
+          ? Boolean(ROLE_KEYMAP[assignedRole]?.[code])
+          : false;
+      }
+
+      function shouldBlockLocalCode(code) {
+        if (!serverUrl || assignedRole === "single-player") return false;
+        if (!CONTROLLED_CODES.has(code)) return false;
+        return !canSendCode(code);
+      }
+
+      function handleLocalKey(event) {
+        if (!event.isTrusted) return;
+        const code = event.code;
+
+        if (shouldBlockLocalCode(code)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          debugLog("blocked local key", assignedRole, code);
+          return;
+        }
+
+        if (!canSendCode(code)) return;
+
+        if (event.type === "keydown") {
+          if (event.repeat || localHeldCodes.has(code)) return;
+          localHeldCodes.add(code);
+        } else {
+          localHeldCodes.delete(code);
+        }
+
+        const keyInfo = ROLE_KEYMAP[assignedRole][code];
+        sendRaw({
+          type: "input",
+          action: event.type,
+          code,
+          key: keyInfo.key,
+          role: assignedRole,
+          seq: ++seq,
+          t: Date.now()
+        });
+      }
+
+      function dispatchRemoteInput(message) {
+        if ((message.role !== "fire" && message.role !== "water") || !ROLE_KEYMAP[message.role]?.[message.code]) {
+          return;
+        }
+
+        const keyInfo = ROLE_KEYMAP[message.role][message.code];
+        debugLog("remote input", message.action, message.role, message.code);
+        dispatchKeyboard(message.action, message.code, keyInfo);
+        focusRufflePlayer();
+      }
+
+      function dispatchKeyboard(action, code, keyInfo) {
+        for (const dispatchTarget of ruffleEventTargets()) {
+          const keyboardEvent = new KeyboardEvent(action, {
+            key: keyInfo.key,
+            code,
+            bubbles: true,
+            cancelable: true
+          });
+          defineKeyCode(keyboardEvent, keyInfo.keyCode);
+          dispatchTarget.dispatchEvent(keyboardEvent);
+        }
+      }
+
+      function defineKeyCode(event, keyCode) {
+        for (const property of ["keyCode", "which", "charCode"]) {
+          try {
+            Object.defineProperty(event, property, {
+              get: () => (property === "charCode" ? 0 : keyCode)
+            });
+          } catch {
+            debugLog("key code define failed", property);
+          }
+        }
+      }
+
+      function sendInput(action, role, code) {
+        if (!ROLE_KEYMAP[role]?.[code]) return;
+        const keyInfo = ROLE_KEYMAP[role][code];
+        sendRaw({
+          type: "input",
+          action,
+          code,
+          key: keyInfo.key,
+          role,
+          seq: ++seq,
+          t: Date.now()
+        });
+      }
+
+      function handleTouchInput(event) {
+        const button = event.currentTarget;
+        const role = button.dataset.role;
+        const code = button.dataset.code;
+        const keyInfo = ROLE_KEYMAP[role]?.[code];
+        if (!keyInfo) return;
+
+        if (assignedRole !== "single-player" && assignedRole !== role) {
+          event.preventDefault();
+          return;
+        }
+
+        event.preventDefault();
+        focusRufflePlayer();
+
+        if (event.type === "pointerdown") {
+          button.setPointerCapture?.(event.pointerId);
+          if (touchHeld.has(event.pointerId)) return;
+          touchHeld.set(event.pointerId, { button, role, code });
+          button.classList.add("is-active");
+          dispatchKeyboard("keydown", code, keyInfo);
+          if (assignedRole === role) {
+            sendInput("keydown", role, code);
+          }
+          return;
+        }
+
+        const held = touchHeld.get(event.pointerId);
+        if (!held) return;
+        touchHeld.delete(event.pointerId);
+        held.button.classList.remove("is-active");
+        const heldKeyInfo = ROLE_KEYMAP[held.role]?.[held.code];
+        if (heldKeyInfo) {
+          dispatchKeyboard("keyup", held.code, heldKeyInfo);
+          if (assignedRole === held.role) {
+            sendInput("keyup", held.role, held.code);
+          }
+        }
+      }
+
+      async function initDiscordActivity() {
+        if (!discordClientId) {
+          discordText.textContent = "not configured";
+          return;
+        }
+
+        try {
+          const { DiscordSDK } = await import(DISCORD_SDK_MODULE_URL);
+          discordSdk = new DiscordSDK(discordClientId);
+          discordText.textContent = "initializing";
+
+          if (!explicitRoomId && discordSdk.instanceId) {
+            roomId = sanitizeRoom(discordSdk.instanceId) || roomId;
+            roomText.textContent = roomId;
+            syncRoomUrl();
+          }
+
+          await discordSdk.ready();
+          discordText.textContent = "ready";
+        } catch (error) {
+          discordText.textContent = "unavailable";
+          debugLog("discord init failed", error);
+        }
+      }
+
       fullscreenButton?.addEventListener("click", () => {
         enterFullscreen().catch((error) => {
           console.error("Fullscreen failed:", error);
         });
+      });
+
+      copyInviteButton?.addEventListener("click", async () => {
+        const text = inviteUrl();
+        try {
+          await navigator.clipboard.writeText(text);
+          copyInviteButton.textContent = "Copied";
+          window.setTimeout(() => {
+            copyInviteButton.textContent = "Copy invite URL";
+          }, 1400);
+        } catch (error) {
+          window.prompt("Invite URL", text);
+        }
+      });
+
+      reconnectButton?.addEventListener("click", () => {
+        connect();
+      });
+
+      for (const button of padButtons) {
+        button.addEventListener("pointerdown", handleTouchInput);
+        button.addEventListener("pointerup", handleTouchInput);
+        button.addEventListener("pointercancel", handleTouchInput);
+        button.addEventListener("lostpointercapture", handleTouchInput);
+      }
+
+      window.addEventListener("keydown", handleLocalKey, true);
+      window.addEventListener("keyup", handleLocalKey, true);
+
+      window.addEventListener("blur", () => {
+        for (const code of localHeldCodes) {
+          if (canSendCode(code)) {
+            sendInput("keyup", assignedRole, code);
+          }
+        }
+        localHeldCodes.clear();
       });
 
       document.addEventListener("fullscreenchange", () => {
@@ -173,6 +783,8 @@
       boot().catch((error) => {
         console.error("Failed to load the SWF file:", error);
       });
+      updateTouchControls();
+      initDiscordActivity().finally(() => connect());
     </script>
   </body>
 </html>

@@ -1,0 +1,11 @@
+name = "fire-water-multiplayer"
+main = "worker.js"
+compatibility_date = "2026-06-27"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "MultiplayerRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MultiplayerRoom"]
