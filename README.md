@@ -46,25 +46,30 @@ The app still works as a normal single-player fullscreen Ruffle page without a s
 npm install -g wrangler
 ```
 
-2. Copy the example config:
+2. Deploy the multiplayer API Worker from the repository root:
 
 ```sh
-cp cloudflare/wrangler.toml.example cloudflare/wrangler.toml
-```
-
-3. Deploy from the Cloudflare directory:
-
-```sh
-cd cloudflare
 wrangler deploy
 ```
 
-4. Copy the Worker domain from Wrangler output.
+3. Use the deployed Worker domain as the multiplayer WebSocket server.
+
+Current Worker:
+
+```txt
+https://fireboy-watergirl.neodevils-contact.workers.dev/
+```
+
+Health check:
+
+```txt
+https://fireboy-watergirl.neodevils-contact.workers.dev/health
+```
 
 Open the game with:
 
 ```txt
-https://neodevils.github.io/curly-sniffle/?room=test&server=wss://YOUR_WORKER_DOMAIN/room
+https://neodevils.github.io/curly-sniffle/?room=test&server=wss://fireboy-watergirl.neodevils-contact.workers.dev/room
 ```
 
 Optional query parameters:
@@ -81,7 +86,7 @@ If `room` is missing, the page generates a short room id and writes it into the 
 
 ## Controls
 
-Mappings are configured in one place in both `index.html` and `cloudflare/worker.js`.
+Mappings are configured in one place in both `index.html` and `src/worker.ts`.
 
 ```txt
 Fireboy: ArrowLeft, ArrowRight, ArrowUp
@@ -117,20 +122,42 @@ Touch controls are shown only when JavaScript device detection reports `phone` o
 
 The page can run as a Discord Activity wrapper without changing the normal GitHub Pages flow.
 
-Discord's official Embedded App SDK exposes `instanceId` immediately after SDK construction. When `discordClientId` is provided and `room` is not provided, the wrapper uses that `instanceId` as the room id, so users joining the same Activity instance land in the same input-relay room.
+Discord's official Embedded App SDK exposes `instanceId` immediately after SDK construction. When `discordClientId` is provided and `room` is not provided, the wrapper uses that `instanceId` as the room id, so users joining the same Discord Activity instance land in the same Worker room.
 
 When the Discord SDK is ready, the small `Invite Friend` button calls Discord's native invite UI through `discordSdk.commands.openInviteDialog()`. Outside Discord, the button stays hidden and the page remains a normal browser game.
 
-Example Activity URL:
+Production Activity URL:
 
 ```txt
-https://neodevils.github.io/curly-sniffle/?discordClientId=YOUR_DISCORD_CLIENT_ID&server=wss://YOUR_WORKER_DOMAIN/room
+https://neodevils.github.io/curly-sniffle/?discordClientId=YOUR_DISCORD_CLIENT_ID&server=wss://fireboy-watergirl.neodevils-contact.workers.dev/room
 ```
 
 You can still force a specific room:
 
 ```txt
-https://neodevils.github.io/curly-sniffle/?room=test&discordClientId=YOUR_DISCORD_CLIENT_ID&server=wss://YOUR_WORKER_DOMAIN/room
+https://neodevils.github.io/curly-sniffle/?room=test&discordClientId=YOUR_DISCORD_CLIENT_ID&server=wss://fireboy-watergirl.neodevils-contact.workers.dev/room
+```
+
+Discord Developer Portal setup:
+
+```txt
+Activity URL:
+https://neodevils.github.io/curly-sniffle/?discordClientId=YOUR_DISCORD_CLIENT_ID&server=wss://fireboy-watergirl.neodevils-contact.workers.dev/room
+
+Allowed/proxied external origins:
+https://neodevils.github.io
+https://fireboy-watergirl.neodevils-contact.workers.dev
+https://unpkg.com
+https://esm.sh
+```
+
+OAuth scopes to request when adding authentication:
+
+```txt
+openid
+guilds
+sdk.social_layer_presence
+activities.write
 ```
 
 For a real Discord Activity deployment, configure the app in the Discord Developer Portal and add the required Activity URL mappings/proxy settings for the GitHub Pages host, Worker host, Ruffle CDN, and any other external assets you load.
