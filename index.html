@@ -335,8 +335,11 @@
       const roleText = document.querySelector("#roleText");
       const discordText = document.querySelector("#discordText");
       const playersText = document.querySelector("#playersText");
+      const touchControls = document.querySelector("#touchControls");
       const dpads = Array.from(document.querySelectorAll(".dpad"));
       const padButtons = Array.from(document.querySelectorAll(".pad-button"));
+      const deviceType = getDeviceType();
+      const shouldUseTouchControls = deviceType === "phone" || deviceType === "tablet";
 
       let rufflePlayer = null;
       let socket = null;
@@ -356,6 +359,22 @@
         if (DEBUG_MULTIPLAYER) {
           console.debug("[multiplayer]", ...args);
         }
+      }
+
+      function getDeviceType() {
+        const userAgent = navigator.userAgent.toLowerCase();
+        const maxTouchPoints = navigator.maxTouchPoints || 0;
+        const isIPadOS = maxTouchPoints > 1 && userAgent.includes("macintosh");
+        const isAndroid = userAgent.includes("android");
+        const isPhone = /iphone|ipod|windows phone/.test(userAgent) || (isAndroid && userAgent.includes("mobile"));
+        const isTablet =
+          isIPadOS ||
+          /ipad|tablet|playbook|silk|kindle/.test(userAgent) ||
+          (isAndroid && !userAgent.includes("mobile"));
+
+        if (isTablet) return "tablet";
+        if (isPhone) return "phone";
+        return "desktop";
       }
 
       function sanitizeRoom(value) {
@@ -427,6 +446,12 @@
       }
 
       function updateTouchControls() {
+        touchControls?.classList.toggle("is-hidden", !shouldUseTouchControls);
+
+        if (!shouldUseTouchControls) {
+          return;
+        }
+
         for (const dpad of dpads) {
           const role = dpad.dataset.role;
           const shouldShow = assignedRole === "single-player" || assignedRole === role;
@@ -664,6 +689,8 @@
       }
 
       function handleTouchInput(event) {
+        if (!shouldUseTouchControls) return;
+
         const button = event.currentTarget;
         const role = button.dataset.role;
         const code = button.dataset.code;
