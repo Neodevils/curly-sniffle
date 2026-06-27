@@ -356,7 +356,7 @@
       const MULTIPLAYER_SERVER_URL = "wss://fireboy-watergirl.neodevils-contact.workers.dev/room";
       const DISCORD_ACTIVITY_SERVER_URL = "/api/room";
       const DISCORD_AUTH_TOKEN_URL = "/api/auth/discord/token";
-      const DISCORD_ACTIVITY_SCOPES = ["openid", "guilds", "sdk.social_layer_presence", "activities.write"];
+      const DISCORD_ACTIVITY_SCOPES = ["activities.write"];
       const ROLE_KEYMAP = {
         fire: {
           ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
@@ -416,6 +416,7 @@
       let discordParticipants = 0;
       let roomGameStarted = false;
       let gameStartSent = false;
+      let replayingRemotePointer = false;
       let currentPlayers = [];
       const localHeldCodes = new Set();
       const remoteHeldCodes = new Set();
@@ -535,6 +536,7 @@
       }
 
       function blockGuestPointer(event) {
+        if (replayingRemotePointer) return;
         if (!serverUrl || isHostRole()) return;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -544,6 +546,29 @@
         if (!event.isTrusted || !serverUrl || !isHostRole() || gameStartSent) return;
         gameStartSent = true;
         sendRaw({ type: "game_start", t: Date.now() });
+      }
+
+      function relayHostPointer(event) {
+        if (!event.isTrusted || !serverUrl || !isHostRole()) return;
+        const rect = target.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+
+        sendRaw({
+          type: "pointer",
+          action: event.type,
+          x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
+          y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+          button: typeof event.button === "number" ? event.button : 0,
+          buttons: typeof event.buttons === "number" ? event.buttons : 0,
+          pointerId: typeof event.pointerId === "number" ? event.pointerId : 1,
+          pointerType: event.pointerType || "mouse",
+          seq: ++seq,
+          t: Date.now()
+        });
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
       }
 
       function updateTouchControls() {
@@ -713,6 +738,10 @@
         if (message.type === "input" && message.sessionId !== sessionId) {
           dispatchRemoteInput(message);
         }
+
+        if (message.type === "pointer" && message.sessionId !== sessionId) {
+          dispatchRemotePointer(message);
+        }
       }
 
       function canSendCode(code) {
@@ -787,6 +816,55 @@
           defineKeyCode(keyboardEvent, keyInfo.keyCode);
           dispatchTarget.dispatchEvent(keyboardEvent);
         }
+      }
+
+      function dispatchRemotePointer(message) {
+        if (!target || typeof message.x !== "number" || typeof message.y !== "number") return;
+        const rect = target.getBoundingClientRect();
+        const clientX = rect.left + rect.width * clamp(message.x, 0, 1);
+        const clientY = rect.top + rect.height * clamp(message.y, 0, 1);
+        const pointerAction = typeof message.action === "string" ? message.action : "click";
+        const mouseAction = pointerAction.startsWith("pointer") ? pointerAction.replace("pointer", "mouse") : pointerAction;
+        const eventInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX,
+          clientY,
+          screenX: clientX,
+          screenY: clientY,
+          button: typeof message.button === "number" ? message.button : 0,
+          buttons: typeof message.buttons === "number" ? message.buttons : 0,
+          pointerId: typeof message.pointerId === "number" ? message.pointerId : 1,
+          pointerType: typeof message.pointerType === "string" ? message.pointerType : "mouse"
+        };
+
+        replayingRemotePointer = true;
+        try {
+          for (const dispatchTarget of rufflePointerTargets()) {
+            if (window.PointerEvent && pointerAction.startsWith("pointer")) {
+              dispatchTarget.dispatchEvent(new PointerEvent(pointerAction, eventInit));
+            }
+
+            dispatchTarget.dispatchEvent(new MouseEvent(mouseAction, eventInit));
+
+            if (pointerAction === "pointerup") {
+              dispatchTarget.dispatchEvent(new MouseEvent("click", eventInit));
+            }
+          }
+        } finally {
+          replayingRemotePointer = false;
+        }
+        focusRufflePlayer();
+      }
+
+      function rufflePointerTargets() {
+        const targets = [];
+        const shadowCanvas = rufflePlayer?.shadowRoot?.querySelector("canvas");
+        if (shadowCanvas) targets.push(shadowCanvas);
+        if (rufflePlayer) targets.push(rufflePlayer);
+        if (target) targets.push(target);
+        return targets;
       }
 
       function defineKeyCode(event, keyCode) {
@@ -1058,6 +1136,9 @@
 
       for (const pointerEventName of ["pointerdown", "pointerup", "click", "dblclick", "contextmenu"]) {
         target?.addEventListener(pointerEventName, blockGuestPointer, true);
+      }
+      for (const pointerEventName of ["pointerdown", "pointerup"]) {
+        target?.addEventListener(pointerEventName, relayHostPointer, true);
       }
       target?.addEventListener("pointerup", notifyHostGameStart, true);
 
