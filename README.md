@@ -107,11 +107,12 @@ Room behavior:
 
 ```txt
 Max active players: 2
-Roles: fire, water
-Extra clients: spectator
+Initial roles: fire, spectator
+After host starts the game: fire, water
+Extra clients after two active players: spectator
 ```
 
-The Worker assigns the first active participant to `fire`, the second active participant to `water`, and any additional participant to `spectator`. Each active player can only send input for their assigned role, and the server validates that assignment before relaying input.
+The Worker assigns the first participant to `fire` as the host. Other participants observe as `spectator` until the host clicks into the game surface and starts the room. At that point, the first waiting spectator is promoted to `water`. Each active player can only send input for their assigned role, and the server validates that assignment before relaying input.
 
 Debug room/status details are hidden by default. Add `?debug=1` to show the diagnostic overlay.
 
@@ -144,7 +145,7 @@ Guest - Watergirl
 Spectator
 ```
 
-The first active participant is the host/fire role. Only the host can click inside the Ruffle game surface, which keeps level selection and menu navigation under the room creator's control. The guest/water role can still send Watergirl movement input through the relay.
+The first active participant is the host/fire role. Only the host can click inside the Ruffle game surface, which keeps level selection and menu navigation under the room creator's control. The second participant observes until the host starts the room, then becomes the guest/water role and can send Watergirl movement input through the relay.
 
 Production browser URL:
 

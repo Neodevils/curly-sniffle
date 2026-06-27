@@ -3,8 +3,6 @@ const ROLE_KEYMAP = {
   water: new Set(["KeyA", "KeyD", "KeyW"])
 };
 
-const ACTIVE_ROLES = ["fire", "water"] as const;
-
 type PlayerRole = "fire" | "water" | "spectator";
 
 type Env = {
@@ -124,6 +122,7 @@ function jsonResponse(payload: Record<string, unknown>, status = 200): Response 
 }
 
 export class MultiplayerRoom {
+  private gameStarted = false;
   private sessions = new Map<
     string,
     {
@@ -182,6 +181,7 @@ export class MultiplayerRoom {
       sessionId: session.id,
       role: session.role,
       room,
+      gameStarted: this.gameStarted,
       players: this.players()
     });
     this.broadcastPresence();
@@ -193,10 +193,12 @@ export class MultiplayerRoom {
   }
 
   private assignRole(): PlayerRole {
-    for (const role of ACTIVE_ROLES) {
-      if (this.isRoleFree(role)) {
-        return role;
-      }
+    if (this.isRoleFree("fire")) {
+      return "fire";
+    }
+
+    if (this.gameStarted && this.isRoleFree("water")) {
+      return "water";
     }
 
     return "spectator";
@@ -228,6 +230,11 @@ export class MultiplayerRoom {
 
     if (message.type === "ping") {
       this.send(session, { type: "pong", t: message.t || Date.now() });
+      return;
+    }
+
+    if (message.type === "game_start") {
+      this.startGame(session);
       return;
     }
 
@@ -298,6 +305,7 @@ export class MultiplayerRoom {
   private broadcastPresence(): void {
     this.broadcast({
       type: "presence",
+      gameStarted: this.gameStarted,
       players: this.players()
     });
   }
@@ -313,8 +321,46 @@ export class MultiplayerRoom {
 
   private removeSession(sessionId: string): void {
     if (this.sessions.delete(sessionId)) {
+      if (this.gameStarted && this.isRoleFree("water")) {
+        this.promoteNextSpectatorToWater();
+      }
       this.broadcastPresence();
     }
+  }
+
+  private startGame(session: { id: string; socket: WebSocket; role: PlayerRole }): void {
+    if (session.role !== "fire") {
+      this.send(session, { type: "error", code: "not_host", message: "Only the host can start the room." });
+      return;
+    }
+
+    if (!this.gameStarted) {
+      this.gameStarted = true;
+      this.promoteNextSpectatorToWater();
+    }
+
+    this.broadcast({
+      type: "room_state",
+      gameStarted: this.gameStarted
+    });
+    this.broadcastPresence();
+  }
+
+  private promoteNextSpectatorToWater(): void {
+    if (!this.isRoleFree("water")) return;
+
+    const spectator = Array.from(this.sessions.values())
+      .filter((session) => session.role === "spectator" && session.socket.readyState === WebSocket.OPEN)
+      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+
+    if (!spectator) return;
+    spectator.role = "water";
+    this.send(spectator, {
+      type: "role",
+      role: spectator.role,
+      gameStarted: this.gameStarted,
+      players: this.players()
+    });
   }
 }
 

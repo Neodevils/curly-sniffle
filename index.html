@@ -414,6 +414,8 @@
       let discordReady = false;
       let discordAuthenticated = false;
       let discordParticipants = 0;
+      let roomGameStarted = false;
+      let gameStartSent = false;
       let currentPlayers = [];
       const localHeldCodes = new Set();
       const remoteHeldCodes = new Set();
@@ -511,6 +513,10 @@
       }
 
       function updateRole(role) {
+        if (assignedRole !== role) {
+          releaseLocalHeldKeys();
+          releaseTouchHeldKeys();
+        }
         assignedRole = role || "single-player";
         roleText.textContent = assignedRole;
         compactRoleText.textContent = roleLabel(assignedRole);
@@ -532,6 +538,12 @@
         if (!serverUrl || isHostRole()) return;
         event.preventDefault();
         event.stopImmediatePropagation();
+      }
+
+      function notifyHostGameStart(event) {
+        if (!event.isTrusted || !serverUrl || !isHostRole() || gameStartSent) return;
+        gameStartSent = true;
+        sendRaw({ type: "game_start", t: Date.now() });
       }
 
       function updateTouchControls() {
@@ -662,15 +674,34 @@
 
         if (message.type === "welcome") {
           sessionId = message.sessionId || "";
+          roomGameStarted = Boolean(message.gameStarted);
           updateRole(message.role);
           roomText.textContent = message.room || roomId;
           setPlayers(message.players || []);
+          updateDiscordActivityStatus();
           focusRufflePlayer();
           return;
         }
 
+        if (message.type === "role") {
+          roomGameStarted = Boolean(message.gameStarted);
+          updateRole(message.role);
+          setPlayers(message.players || currentPlayers);
+          updateDiscordActivityStatus();
+          focusRufflePlayer();
+          return;
+        }
+
+        if (message.type === "room_state") {
+          roomGameStarted = Boolean(message.gameStarted);
+          updateDiscordActivityStatus();
+          return;
+        }
+
         if (message.type === "presence") {
+          roomGameStarted = Boolean(message.gameStarted);
           setPlayers(message.players || []);
+          updateDiscordActivityStatus();
           return;
         }
 
@@ -925,6 +956,7 @@
           discordAuthenticated = true;
           discordText.textContent = "authenticated";
         } catch (error) {
+          console.warn("Discord authentication failed:", error);
           discordAuthenticated = false;
           discordText.textContent = "ready";
           debugLog("discord auth failed", error);
@@ -935,19 +967,24 @@
         if (!discordSdk?.commands?.setActivity) return;
 
         try {
+          const activePlayers = currentPlayers.filter((player) => player.role === "fire" || player.role === "water");
+          const activeCount = Math.min(2, Math.max(1, discordParticipants || activePlayers.length || 1));
           await discordSdk.commands.setActivity({
             activity: {
+              name: "Fireboy & Watergirl",
               type: 0,
-              details: "Fireboy & Watergirl",
-              state: roomId ? `Room ${roomId}` : "Playing together",
+              application_id: discordClientId,
+              details: roomGameStarted ? "Playing together" : "Waiting for host",
+              state: `${activeCount}/2 in room`,
               party: {
                 id: roomId,
-                size: [Math.max(1, discordParticipants || currentPlayers.length || 1), 2]
+                size: [activeCount, 2]
               },
               instance: true
             }
           });
         } catch (error) {
+          console.warn("Discord activity status update failed:", error);
           debugLog("discord status update failed", { authenticated: discordAuthenticated, error });
         }
       }
@@ -1022,6 +1059,7 @@
       for (const pointerEventName of ["pointerdown", "pointerup", "click", "dblclick", "contextmenu"]) {
         target?.addEventListener(pointerEventName, blockGuestPointer, true);
       }
+      target?.addEventListener("pointerup", notifyHostGameStart, true);
 
       window.addEventListener("keydown", handleLocalKey, true);
       window.addEventListener("keyup", handleLocalKey, true);
