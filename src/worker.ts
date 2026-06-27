@@ -197,7 +197,7 @@ export class MultiplayerRoom {
       return "fire";
     }
 
-    if (this.gameStarted && this.isRoleFree("water")) {
+    if (this.isRoleFree("water")) {
       return "water";
     }
 
@@ -238,19 +238,7 @@ export class MultiplayerRoom {
       return;
     }
 
-    if (message.type === "pointer") {
-      const pointer = this.validatedPointer(session, message);
-      if (pointer) {
-        this.broadcast(pointer, session.id);
-      }
-      return;
-    }
-
-    if (message.type === "frame") {
-      const frame = this.validatedFrame(session, message);
-      if (frame) {
-        this.broadcast(frame, session.id);
-      }
+    if (message.type === "pointer" || message.type === "frame") {
       return;
     }
 
@@ -295,70 +283,6 @@ export class MultiplayerRoom {
       code: message.code,
       key: typeof message.key === "string" ? message.key : message.code,
       role: session.role,
-      seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
-      t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
-      sessionId: session.id
-    };
-  }
-
-  private validatedPointer(
-    session: { id: string; socket: WebSocket; role: PlayerRole },
-    message: Record<string, unknown>
-  ): Record<string, unknown> | null {
-    if (session.role !== "fire") {
-      this.send(session, { type: "error", code: "not_host", message: "Only the host can relay menu pointer events." });
-      return null;
-    }
-
-    if (message.action !== "pointerdown" && message.action !== "pointerup") {
-      this.send(session, { type: "error", code: "bad_pointer_action", message: "Pointer action must be pointerdown or pointerup." });
-      return null;
-    }
-
-    if (typeof message.x !== "number" || !Number.isFinite(message.x) || typeof message.y !== "number" || !Number.isFinite(message.y)) {
-      this.send(session, { type: "error", code: "bad_pointer_position", message: "Pointer position must be finite normalized numbers." });
-      return null;
-    }
-
-    return {
-      type: "pointer",
-      action: message.action,
-      x: clamp(message.x, 0, 1),
-      y: clamp(message.y, 0, 1),
-      button: typeof message.button === "number" && Number.isFinite(message.button) ? message.button : 0,
-      buttons: typeof message.buttons === "number" && Number.isFinite(message.buttons) ? message.buttons : 0,
-      pointerId: typeof message.pointerId === "number" && Number.isFinite(message.pointerId) ? message.pointerId : 1,
-      pointerType: typeof message.pointerType === "string" ? message.pointerType.slice(0, 24) : "mouse",
-      seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
-      t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
-      sessionId: session.id
-    };
-  }
-
-  private validatedFrame(
-    session: { id: string; socket: WebSocket; role: PlayerRole },
-    message: Record<string, unknown>
-  ): Record<string, unknown> | null {
-    if (session.role !== "fire") {
-      this.send(session, { type: "error", code: "not_host", message: "Only the host can stream game frames." });
-      return null;
-    }
-
-    if (typeof message.image !== "string" || !message.image.startsWith("data:image/jpeg;base64,")) {
-      this.send(session, { type: "error", code: "bad_frame", message: "Frame image must be a JPEG data URL." });
-      return null;
-    }
-
-    if (message.image.length > 300_000) {
-      this.send(session, { type: "error", code: "frame_too_large", message: "Frame image is too large." });
-      return null;
-    }
-
-    return {
-      type: "frame",
-      image: message.image,
-      width: typeof message.width === "number" && Number.isFinite(message.width) ? Math.round(message.width) : 0,
-      height: typeof message.height === "number" && Number.isFinite(message.height) ? Math.round(message.height) : 0,
       seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
       t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
       sessionId: session.id
@@ -447,8 +371,4 @@ export class MultiplayerRoom {
 function sanitizeRoom(value: string | null): string {
   if (!value) return "";
   return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }

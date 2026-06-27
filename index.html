@@ -47,18 +47,6 @@
         background: #05060a;
       }
 
-      .host-frame {
-        position: fixed;
-        inset: 0;
-        z-index: 2;
-        width: 100vw;
-        height: 100vh;
-        height: 100dvh;
-        object-fit: contain;
-        background: #05060a;
-        pointer-events: none;
-      }
-
       ruffle-player {
         width: 100%;
         height: 100%;
@@ -273,6 +261,31 @@
     </style>
 
     <script>
+      window.__fireWaterIsAbortError = (error) => {
+        return error?.name === "AbortError" || String(error?.message || error).toLowerCase().includes("aborted");
+      };
+
+      window.addEventListener(
+        "unhandledrejection",
+        (event) => {
+          if (window.__fireWaterIsAbortError(event.reason)) {
+            event.preventDefault();
+          }
+        },
+        true
+      );
+
+      window.addEventListener(
+        "error",
+        (event) => {
+          const message = String(event.message || event.error?.message || "");
+          if (message.includes("Could not find a View Model linked to Artboard BaseGlowRemapped")) {
+            event.preventDefault();
+          }
+        },
+        true
+      );
+
       const BLOCKED_FLASH_URL_HOSTS = new Set(["server.cpmstar.com"]);
       const nativeFetch = window.fetch.bind(window);
       const emptySwfResponse = () =>
@@ -323,7 +336,6 @@
 
   <body>
     <div id="player" aria-label="Flash game player"></div>
-    <img id="hostFrame" class="host-frame is-hidden" alt="" aria-hidden="true" />
 
     <section id="playerUi" class="player-ui" aria-label="Game controls">
       <span id="compactRoleText" class="role-pill">Single player</span>
@@ -370,9 +382,6 @@
       const DISCORD_ACTIVITY_SERVER_URL = "/api/room";
       const DISCORD_AUTH_TOKEN_URL = "/api/auth/discord/token";
       const DISCORD_ACTIVITY_SCOPES = ["rpc.activities.write"];
-      const FRAME_STREAM_INTERVAL_MS = 250;
-      const FRAME_STREAM_WIDTH = 640;
-      const FRAME_STREAM_QUALITY = 0.45;
       const ROLE_KEYMAP = {
         fire: {
           ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
@@ -401,7 +410,6 @@
       const discordClientId = params.get("discordClientId") || params.get("client_id") || (isDiscordActivity ? DISCORD_CLIENT_ID : "");
       const debugMode = params.get("debug") === "1";
       const target = document.querySelector("#player");
-      const hostFrame = document.querySelector("#hostFrame");
       const debugOverlay = document.querySelector("#debugOverlay");
       const fullscreenButton = document.querySelector("#fullscreenButton");
       const copyInviteButton = document.querySelector("#copyInviteButton");
@@ -433,11 +441,6 @@
       let discordParticipants = 0;
       let roomGameStarted = false;
       let gameStartSent = false;
-      let replayingRemotePointer = false;
-      let frameStreamTimer = 0;
-      let frameCaptureBusy = false;
-      let frameCanvas = null;
-      let hostFrameUrl = "";
       let currentPlayers = [];
       const localHeldCodes = new Set();
       const remoteHeldCodes = new Set();
@@ -451,6 +454,19 @@
         if (DEBUG_MULTIPLAYER) {
           console.debug("[multiplayer]", ...args);
         }
+      }
+
+      function isAbortError(error) {
+        return window.__fireWaterIsAbortError?.(error) || false;
+      }
+
+      function runBackgroundTask(promise, label) {
+        Promise.resolve(promise).catch((error) => {
+          if (!isAbortError(error)) {
+            console.warn(`${label} failed:`, error);
+          }
+          debugLog(label, error);
+        });
       }
 
       function getDeviceType() {
@@ -543,8 +559,6 @@
         roleText.textContent = assignedRole;
         compactRoleText.textContent = roleLabel(assignedRole);
         updateTouchControls();
-        updateHostFrameVisibility();
-        updateFrameStreaming();
       }
 
       function roleLabel(role) {
@@ -558,40 +572,10 @@
         return assignedRole === "fire" || assignedRole === "single-player";
       }
 
-      function blockGuestPointer(event) {
-        if (replayingRemotePointer) return;
-        if (!serverUrl || isHostRole()) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
-
       function notifyHostGameStart(event) {
         if (!event.isTrusted || !serverUrl || !isHostRole() || gameStartSent) return;
         gameStartSent = true;
         sendRaw({ type: "game_start", t: Date.now() });
-      }
-
-      function relayHostPointer(event) {
-        if (!event.isTrusted || !serverUrl || !isHostRole()) return;
-        const rect = target.getBoundingClientRect();
-        if (!rect.width || !rect.height) return;
-
-        sendRaw({
-          type: "pointer",
-          action: event.type,
-          x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
-          y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
-          button: typeof event.button === "number" ? event.button : 0,
-          buttons: typeof event.buttons === "number" ? event.buttons : 0,
-          pointerId: typeof event.pointerId === "number" ? event.pointerId : 1,
-          pointerType: event.pointerType || "mouse",
-          seq: ++seq,
-          t: Date.now()
-        });
-      }
-
-      function clamp(value, min, max) {
-        return Math.min(max, Math.max(min, value));
       }
 
       function updateTouchControls() {
@@ -681,7 +665,6 @@
 
         socket.addEventListener("open", () => {
           setStatus("connected", "Connected");
-          updateFrameStreaming();
           heartbeatTimer = window.setInterval(() => sendRaw({ type: "ping", t: Date.now() }), 15000);
         });
 
@@ -691,7 +674,6 @@
 
         socket.addEventListener("close", () => {
           clearInterval(heartbeatTimer);
-          stopFrameStreaming();
           releaseRemoteHeldKeys();
           releaseTouchHeldKeys();
           setStatus("disconnected", "Disconnected");
@@ -728,7 +710,7 @@
           updateRole(message.role);
           roomText.textContent = message.room || roomId;
           setPlayers(message.players || []);
-          updateDiscordActivityStatus();
+          runBackgroundTask(updateDiscordActivityStatus(), "discord status update");
           focusRufflePlayer();
           return;
         }
@@ -737,21 +719,21 @@
           roomGameStarted = Boolean(message.gameStarted);
           updateRole(message.role);
           setPlayers(message.players || currentPlayers);
-          updateDiscordActivityStatus();
+          runBackgroundTask(updateDiscordActivityStatus(), "discord status update");
           focusRufflePlayer();
           return;
         }
 
         if (message.type === "room_state") {
           roomGameStarted = Boolean(message.gameStarted);
-          updateDiscordActivityStatus();
+          runBackgroundTask(updateDiscordActivityStatus(), "discord status update");
           return;
         }
 
         if (message.type === "presence") {
           roomGameStarted = Boolean(message.gameStarted);
           setPlayers(message.players || []);
-          updateDiscordActivityStatus();
+          runBackgroundTask(updateDiscordActivityStatus(), "discord status update");
           return;
         }
 
@@ -764,13 +746,7 @@
           dispatchRemoteInput(message);
         }
 
-        if (message.type === "pointer" && message.sessionId !== sessionId) {
-          dispatchRemotePointer(message);
-        }
-
-        if (message.type === "frame" && message.sessionId !== sessionId) {
-          showHostFrame(message);
-        }
+        if (message.type === "pointer" || message.type === "frame") return;
       }
 
       function canSendCode(code) {
@@ -845,130 +821,6 @@
           defineKeyCode(keyboardEvent, keyInfo.keyCode);
           dispatchTarget.dispatchEvent(keyboardEvent);
         }
-      }
-
-      function dispatchRemotePointer(message) {
-        if (!target || typeof message.x !== "number" || typeof message.y !== "number") return;
-        const rect = target.getBoundingClientRect();
-        const clientX = rect.left + rect.width * clamp(message.x, 0, 1);
-        const clientY = rect.top + rect.height * clamp(message.y, 0, 1);
-        const pointerAction = typeof message.action === "string" ? message.action : "click";
-        const mouseAction = pointerAction.startsWith("pointer") ? pointerAction.replace("pointer", "mouse") : pointerAction;
-        const eventInit = {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          clientX,
-          clientY,
-          screenX: clientX,
-          screenY: clientY,
-          button: typeof message.button === "number" ? message.button : 0,
-          buttons: typeof message.buttons === "number" ? message.buttons : 0,
-          pointerId: typeof message.pointerId === "number" ? message.pointerId : 1,
-          pointerType: typeof message.pointerType === "string" ? message.pointerType : "mouse"
-        };
-
-        replayingRemotePointer = true;
-        try {
-          for (const dispatchTarget of rufflePointerTargets()) {
-            if (window.PointerEvent && pointerAction.startsWith("pointer")) {
-              dispatchTarget.dispatchEvent(new PointerEvent(pointerAction, eventInit));
-            }
-
-            dispatchTarget.dispatchEvent(new MouseEvent(mouseAction, eventInit));
-
-            if (pointerAction === "pointerup") {
-              dispatchTarget.dispatchEvent(new MouseEvent("click", eventInit));
-            }
-          }
-        } finally {
-          replayingRemotePointer = false;
-        }
-        focusRufflePlayer();
-      }
-
-      function rufflePointerTargets() {
-        const targets = [];
-        const shadowCanvas = rufflePlayer?.shadowRoot?.querySelector("canvas");
-        if (shadowCanvas) targets.push(shadowCanvas);
-        if (rufflePlayer) targets.push(rufflePlayer);
-        if (target) targets.push(target);
-        return targets;
-      }
-
-      function shouldViewHostFrame() {
-        return Boolean(serverUrl) && assignedRole !== "fire" && assignedRole !== "single-player";
-      }
-
-      function updateHostFrameVisibility() {
-        hostFrame?.classList.toggle("is-hidden", !shouldViewHostFrame() || !hostFrameUrl);
-      }
-
-      function updateFrameStreaming() {
-        if (serverUrl && assignedRole === "fire") {
-          startFrameStreaming();
-        } else {
-          stopFrameStreaming();
-        }
-      }
-
-      function startFrameStreaming() {
-        if (frameStreamTimer) return;
-        captureAndSendFrame();
-        frameStreamTimer = window.setInterval(captureAndSendFrame, FRAME_STREAM_INTERVAL_MS);
-      }
-
-      function stopFrameStreaming() {
-        if (!frameStreamTimer) return;
-        window.clearInterval(frameStreamTimer);
-        frameStreamTimer = 0;
-        frameCaptureBusy = false;
-      }
-
-      async function captureAndSendFrame() {
-        if (frameCaptureBusy || socket?.readyState !== WebSocket.OPEN || assignedRole !== "fire") return;
-
-        const source = rufflePlayer?.shadowRoot?.querySelector("canvas");
-        if (!source?.width || !source?.height) return;
-
-        frameCaptureBusy = true;
-        try {
-          const scale = Math.min(1, FRAME_STREAM_WIDTH / source.width);
-          const width = Math.max(1, Math.round(source.width * scale));
-          const height = Math.max(1, Math.round(source.height * scale));
-          frameCanvas ||= document.createElement("canvas");
-          frameCanvas.width = width;
-          frameCanvas.height = height;
-          const context = frameCanvas.getContext("2d", { alpha: false });
-          if (!context) return;
-
-          context.drawImage(source, 0, 0, width, height);
-          const dataUrl = frameCanvas.toDataURL("image/jpeg", FRAME_STREAM_QUALITY);
-          sendRaw({
-            type: "frame",
-            image: dataUrl,
-            width,
-            height,
-            seq: ++seq,
-            t: Date.now()
-          });
-        } catch (error) {
-          debugLog("frame capture failed", error);
-        } finally {
-          frameCaptureBusy = false;
-        }
-      }
-
-      function showHostFrame(message) {
-        if (!shouldViewHostFrame() || typeof message.image !== "string" || !message.image.startsWith("data:image/")) {
-          return;
-        }
-
-        hostFrameUrl = message.image;
-        if (hostFrame) {
-          hostFrame.src = hostFrameUrl;
-        }
-        updateHostFrameVisibility();
       }
 
       function defineKeyCode(event, keyCode) {
@@ -1136,7 +988,9 @@
           discordAuthenticated = true;
           discordText.textContent = "authenticated";
         } catch (error) {
-          console.warn("Discord authentication failed:", error);
+          if (!isAbortError(error)) {
+            console.warn("Discord authentication failed:", error);
+          }
           discordAuthenticated = false;
           discordText.textContent = "ready";
           debugLog("discord auth failed", error);
@@ -1164,7 +1018,9 @@
             }
           });
         } catch (error) {
-          console.warn("Discord activity status update failed:", error);
+          if (!isAbortError(error)) {
+            console.warn("Discord activity status update failed:", error);
+          }
           debugLog("discord status update failed", { authenticated: discordAuthenticated, error });
         }
       }
@@ -1196,7 +1052,7 @@
             ? payload
             : [];
         discordParticipants = participants.length;
-        updateDiscordActivityStatus();
+        runBackgroundTask(updateDiscordActivityStatus(), "discord status update");
         if (debugMode) {
           setPlayers(currentPlayers);
         }
@@ -1236,12 +1092,6 @@
         button.addEventListener("lostpointercapture", handleTouchInput);
       }
 
-      for (const pointerEventName of ["pointerdown", "pointerup", "click", "dblclick", "contextmenu"]) {
-        target?.addEventListener(pointerEventName, blockGuestPointer, true);
-      }
-      for (const pointerEventName of ["pointerdown", "pointerup"]) {
-        target?.addEventListener(pointerEventName, relayHostPointer, true);
-      }
       target?.addEventListener("pointerup", notifyHostGameStart, true);
 
       window.addEventListener("keydown", handleLocalKey, true);

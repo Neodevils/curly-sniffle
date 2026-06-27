@@ -7,7 +7,7 @@ This repository hosts a fullscreen single-page Ruffle wrapper for a legal SWF at
 This repository intentionally does not include Fireboy & Watergirl or any other copyrighted SWF.
 Only add a SWF that you created, own, or have permission to distribute.
 
-The multiplayer prototype treats the host's Ruffle instance as the source of truth. The SWF is closed and Ruffle runs the game locally, so the Cloudflare Worker does not provide true server-authoritative game-state simulation. It coordinates rooms, assigns roles, validates role keys, relays input events to the host, and relays compressed host screen frames back to non-host players so everyone sees the same screen.
+The multiplayer prototype runs one local Ruffle instance per player. The SWF is closed and Ruffle runs the game locally, so the Cloudflare Worker does not provide true server-authoritative game-state simulation. It coordinates rooms, assigns roles, validates role keys, and relays input events between players. Both players should choose the same level locally, then one controls Fireboy and the other controls Watergirl.
 
 If desync happens, the proper solution is remaking the game in HTML5 or modifying/owning the original game source.
 
@@ -107,12 +107,11 @@ Room behavior:
 
 ```txt
 Max active players: 2
-Initial roles: fire, spectator
-After host starts the game: fire, water
+Initial roles: fire, water
 Extra clients after two active players: spectator
 ```
 
-The Worker assigns the first participant to `fire` as the host. Other participants observe as `spectator` until the host clicks into the game surface and starts the room. The host streams compressed frames of the Ruffle canvas to non-host players, so observers see the host's real game screen instead of relying on a separate local SWF staying in sync. At that point, the first waiting spectator is promoted to `water`. Each active player can only send input for their assigned role, and the server validates that assignment before relaying input.
+The Worker assigns the first participant to `fire` and the second participant to `water`. Each player keeps their own local SWF view and can navigate menus or enter levels locally. Once both players are in the same level, each active player can only send input for their assigned role, and the server validates that assignment before relaying input.
 
 Debug room/status details are hidden by default. Add `?debug=1` to show the diagnostic overlay.
 
@@ -145,7 +144,7 @@ Guest - Watergirl
 Spectator
 ```
 
-The first active participant is the host/fire role. Only the host can directly click inside the Ruffle game surface, which keeps level selection and menu navigation under the room creator's control. Non-host players see the host's streamed screen. The second participant observes until the host starts the room, then becomes the guest/water role and can send Watergirl movement input through the relay.
+The first active participant is the host/fire role. The second participant is the guest/water role. Both participants keep their own local Ruffle screen, choose the same level locally, and then send only their assigned movement input through the relay.
 
 Production browser URL:
 
