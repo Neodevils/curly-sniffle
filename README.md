@@ -36,7 +36,7 @@ The site should become available at:
 https://neodevils.github.io/curly-sniffle/
 ```
 
-The app still works as a normal single-player fullscreen Ruffle page without a server URL.
+The app still works as a normal single-player fullscreen Ruffle page without a server URL. Missing `server` is not an error; multiplayer is enabled only when a WebSocket server URL is provided.
 
 ## Cloudflare Worker
 
@@ -77,7 +77,7 @@ Optional query parameters:
 ?discordClientId=<DISCORD_APPLICATION_CLIENT_ID>
 ```
 
-If `room` is missing, the page generates a short room id and writes it into the URL. If `server` is missing, the page stays single-player and shows a setup message.
+If `room` is missing, the page generates a short room id and writes it into the URL. If `server` is missing, the page silently stays single-player.
 
 ## Controls
 
@@ -96,7 +96,9 @@ Roles: fire, water
 Extra clients: spectator
 ```
 
-The Worker grants a preferred role if it is free, otherwise the first free active role, otherwise spectator. Each active player can only send input for their assigned role.
+The Worker assigns the first active participant to `fire`, the second active participant to `water`, and any additional participant to `spectator`. Each active player can only send input for their assigned role, and the server validates that assignment before relaying input.
+
+Debug room/status details are hidden by default. Add `?debug=1` to show the diagnostic overlay.
 
 ## Mobile Controls
 
@@ -109,13 +111,15 @@ Multiplayer water role: shows Watergirl pad only
 Spectator: hides both pads
 ```
 
-Touch controls dispatch keyboard events into Ruffle locally. In multiplayer, they also relay the assigned role's input through the Worker.
+Touch controls are shown only when JavaScript device detection reports `phone` or `tablet`; desktop does not show D-pads. Touch controls dispatch keyboard events into Ruffle locally. In multiplayer, they also relay the assigned role's input through the Worker.
 
 ## Discord Activity
 
 The page can run as a Discord Activity wrapper without changing the normal GitHub Pages flow.
 
 Discord's official Embedded App SDK exposes `instanceId` immediately after SDK construction. When `discordClientId` is provided and `room` is not provided, the wrapper uses that `instanceId` as the room id, so users joining the same Activity instance land in the same input-relay room.
+
+When the Discord SDK is ready, the small `Invite Friend` button calls Discord's native invite UI through `discordSdk.commands.openInviteDialog()`. Outside Discord, the button stays hidden and the page remains a normal browser game.
 
 Example Activity URL:
 
