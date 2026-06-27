@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ruffle Flash Player</title>
+    <meta name="description" content="A legal Ruffle + GitHub Pages scaffold for a licensed SWF file." />
+    <link rel="stylesheet" href="./styles.css" />
+
+    <script>
+      window.RufflePlayer = window.RufflePlayer || {};
+      window.RufflePlayer.config = {
+        autoplay: "on",
+        unmuteOverlay: "hidden",
+        contextMenu: false,
+        letterbox: "fullscreen",
+        scale: "showAll",
+        warnOnUnsupportedContent: true
+      };
+    </script>
+    <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+  </head>
+
+  <body>
+    <main class="shell">
+      <section class="card">
+        <div class="topbar">
+          <div>
+            <h1>Ruffle SWF Player</h1>
+            <p>Put your own licensed SWF at <code>swf/game.swf</code>.</p>
+          </div>
+          <a class="button" href="./swf/game.swf">Open SWF</a>
+        </div>
+
+        <div id="player" class="player" aria-label="Flash game player"></div>
+
+        <p class="notice">
+          This template intentionally does not include any copyrighted game file.
+          Only upload a SWF you created, own, or have permission to distribute.
+        </p>
+      </section>
+    </main>
+
+    <script src="./src/app.js" type="module"></script>
+  </body>
+</html>
