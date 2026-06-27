@@ -299,7 +299,7 @@
         warnOnUnsupportedContent: true
       };
     </script>
-    <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+    <script src="./vendor/ruffle/ruffle.js"></script>
   </head>
 
   <body>
@@ -347,7 +347,7 @@
     <script>
       const FILE_PATH = "./swf/game.swf";
       const DEBUG_MULTIPLAYER = false;
-      const DISCORD_SDK_MODULE_URL = "https://esm.sh/@discord/embedded-app-sdk@latest";
+      const DISCORD_SDK_MODULE_URL = "./vendor/discord-sdk.js";
       const DISCORD_READY_TIMEOUT_MS = 3500;
       const ROLE_KEYMAP = {
         fire: {

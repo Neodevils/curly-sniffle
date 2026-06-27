@@ -147,8 +147,6 @@ https://neodevils.github.io/curly-sniffle/?discordClientId=YOUR_DISCORD_CLIENT_I
 Allowed/proxied external origins:
 https://neodevils.github.io
 https://fireboy-watergirl.neodevils-contact.workers.dev
-https://unpkg.com
-https://esm.sh
 ```
 
 OAuth scopes to request when adding authentication:
