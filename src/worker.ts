@@ -246,6 +246,14 @@ export class MultiplayerRoom {
       return;
     }
 
+    if (message.type === "frame") {
+      const frame = this.validatedFrame(session, message);
+      if (frame) {
+        this.broadcast(frame, session.id);
+      }
+      return;
+    }
+
     if (message.type !== "input") {
       this.send(session, { type: "error", code: "bad_type", message: "Unsupported message type." });
       return;
@@ -321,6 +329,36 @@ export class MultiplayerRoom {
       buttons: typeof message.buttons === "number" && Number.isFinite(message.buttons) ? message.buttons : 0,
       pointerId: typeof message.pointerId === "number" && Number.isFinite(message.pointerId) ? message.pointerId : 1,
       pointerType: typeof message.pointerType === "string" ? message.pointerType.slice(0, 24) : "mouse",
+      seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
+      t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
+      sessionId: session.id
+    };
+  }
+
+  private validatedFrame(
+    session: { id: string; socket: WebSocket; role: PlayerRole },
+    message: Record<string, unknown>
+  ): Record<string, unknown> | null {
+    if (session.role !== "fire") {
+      this.send(session, { type: "error", code: "not_host", message: "Only the host can stream game frames." });
+      return null;
+    }
+
+    if (typeof message.image !== "string" || !message.image.startsWith("data:image/jpeg;base64,")) {
+      this.send(session, { type: "error", code: "bad_frame", message: "Frame image must be a JPEG data URL." });
+      return null;
+    }
+
+    if (message.image.length > 300_000) {
+      this.send(session, { type: "error", code: "frame_too_large", message: "Frame image is too large." });
+      return null;
+    }
+
+    return {
+      type: "frame",
+      image: message.image,
+      width: typeof message.width === "number" && Number.isFinite(message.width) ? Math.round(message.width) : 0,
+      height: typeof message.height === "number" && Number.isFinite(message.height) ? Math.round(message.height) : 0,
       seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
       t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
       sessionId: session.id
