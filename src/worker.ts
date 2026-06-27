@@ -15,7 +15,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === "/health") {
+    if (url.pathname === "/health" || url.pathname === "/api/health") {
       return new Response("ok", {
         headers: {
           "content-type": "text/plain; charset=utf-8"
@@ -31,7 +31,7 @@ export default {
       });
     }
 
-    if (url.pathname === "/room") {
+    if (url.pathname === "/room" || url.pathname === "/api/room") {
       const room = sanitizeRoom(url.searchParams.get("room"));
       if (!room) {
         return new Response("Missing or invalid room", {

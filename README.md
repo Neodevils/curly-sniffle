@@ -126,10 +126,10 @@ Discord's official Embedded App SDK exposes `instanceId` immediately after SDK c
 
 When the Discord SDK is ready, the small `Invite Friend` button calls Discord's native invite UI through `discordSdk.commands.openInviteDialog()`. Outside Discord, the button stays hidden and the page remains a normal browser game.
 
-Production Activity URL:
+Production browser URL:
 
 ```txt
-https://neodevils.github.io/curly-sniffle/?discordClientId=YOUR_DISCORD_CLIENT_ID&server=wss://fireboy-watergirl.neodevils-contact.workers.dev/room
+https://neodevils.github.io/curly-sniffle/
 ```
 
 You can still force a specific room:
@@ -142,11 +142,25 @@ Discord Developer Portal setup:
 
 ```txt
 Activity URL:
-https://neodevils.github.io/curly-sniffle/?discordClientId=YOUR_DISCORD_CLIENT_ID&server=wss://fireboy-watergirl.neodevils-contact.workers.dev/room
+https://neodevils.github.io/curly-sniffle/
 
 Allowed/proxied external origins:
 https://neodevils.github.io
 https://fireboy-watergirl.neodevils-contact.workers.dev
+```
+
+Discord URL mappings:
+
+```txt
+/    -> https://neodevils.github.io/curly-sniffle/
+/api -> https://fireboy-watergirl.neodevils-contact.workers.dev
+```
+
+Inside Discord, the app detects the `discordsays.com` Activity frame and automatically uses:
+
+```txt
+Client ID: 1520427674860912660
+WebSocket: /api/room
 ```
 
 OAuth scopes to request when adding authentication:
@@ -158,4 +172,4 @@ sdk.social_layer_presence
 activities.write
 ```
 
-For a real Discord Activity deployment, configure the app in the Discord Developer Portal and add the required Activity URL mappings/proxy settings for the GitHub Pages host, Worker host, Ruffle CDN, and any other external assets you load.
+For a real Discord Activity deployment, configure the app in the Discord Developer Portal and add the required Activity URL mappings/proxy settings for the GitHub Pages host and Worker host.

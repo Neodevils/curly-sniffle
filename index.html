@@ -289,6 +289,23 @@
     </style>
 
     <script>
+      const BLOCKED_FLASH_URL_HOSTS = new Set(["server.cpmstar.com"]);
+      const nativeFetch = window.fetch.bind(window);
+
+      window.fetch = (input, init) => {
+        const url = typeof input === "string" ? input : input?.url;
+
+        try {
+          if (url && BLOCKED_FLASH_URL_HOSTS.has(new URL(url, window.location.href).hostname)) {
+            return Promise.resolve(new Response(new Uint8Array(), { status: 204 }));
+          }
+        } catch {
+          // Let malformed or non-URL fetch inputs fall through to the browser implementation.
+        }
+
+        return nativeFetch(input, init);
+      };
+
       window.RufflePlayer = window.RufflePlayer || {};
       window.RufflePlayer.config = {
         autoplay: "on",
@@ -349,6 +366,9 @@
       const DEBUG_MULTIPLAYER = false;
       const DISCORD_SDK_MODULE_URL = "./vendor/discord-sdk.js";
       const DISCORD_READY_TIMEOUT_MS = 3500;
+      const DISCORD_CLIENT_ID = "1520427674860912660";
+      const MULTIPLAYER_SERVER_URL = "wss://fireboy-watergirl.neodevils-contact.workers.dev/room";
+      const DISCORD_ACTIVITY_SERVER_URL = "/api/room";
       const ROLE_KEYMAP = {
         fire: {
           ArrowLeft: { key: "ArrowLeft", keyCode: 37 },
@@ -363,11 +383,18 @@
       };
       const CONTROLLED_CODES = new Set(Object.values(ROLE_KEYMAP).flatMap((mapping) => Object.keys(mapping)));
       const params = new URLSearchParams(window.location.search);
+      const isDiscordActivity =
+        window.location.hostname.endsWith(".discordsays.com") ||
+        params.has("instance_id") ||
+        params.has("frame_id") ||
+        params.has("discord_proxy_ticket");
       const explicitRoomId = sanitizeRoom(params.get("room"));
       let roomId = explicitRoomId || makeRoomId();
       const preferredRole = normalizeRole(params.get("role"));
-      const serverUrl = normalizeServerUrl(params.get("server"));
-      const discordClientId = params.get("discordClientId") || params.get("client_id") || "";
+      const serverUrl = normalizeServerUrl(
+        params.get("server") || (isDiscordActivity ? DISCORD_ACTIVITY_SERVER_URL : MULTIPLAYER_SERVER_URL)
+      );
+      const discordClientId = params.get("discordClientId") || params.get("client_id") || (isDiscordActivity ? DISCORD_CLIENT_ID : "");
       const debugMode = params.get("debug") === "1";
       const target = document.querySelector("#player");
       const debugOverlay = document.querySelector("#debugOverlay");
@@ -452,6 +479,7 @@
         if (!value) return "";
         const trimmed = value.trim();
         if (!trimmed) return "";
+        if (trimmed.startsWith("/")) return new URL(trimmed, window.location.href).toString().replace(/^http/i, "ws");
         if (/^wss?:\/\//i.test(trimmed)) return trimmed;
         if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/^http/i, "ws");
         return `wss://${trimmed}`;
