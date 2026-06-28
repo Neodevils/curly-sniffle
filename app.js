@@ -68,6 +68,7 @@
       const discordClientId = params.get("discordClientId") || params.get("client_id") || (isDiscordActivity ? DISCORD_CLIENT_ID : "");
       const debugMode = params.get("debug") === "1";
       const target = document.querySelector("#player");
+      const playerUi = document.querySelector("#playerUi");
       const debugOverlay = document.querySelector("#debugOverlay");
       const fullscreenButton = document.querySelector("#fullscreenButton");
       const copyInviteButton = document.querySelector("#copyInviteButton");
@@ -302,10 +303,15 @@
       }
 
       function focusRufflePlayer() {
+        focusRufflePlayerNow();
         requestAnimationFrame(() => {
-          const focusTarget = rufflePlayer?.shadowRoot?.querySelector("canvas") || rufflePlayer;
-          focusTarget?.focus?.({ preventScroll: true });
+          focusRufflePlayerNow();
         });
+      }
+
+      function focusRufflePlayerNow() {
+        const focusTarget = rufflePlayer?.shadowRoot?.querySelector("canvas") || rufflePlayer;
+        focusTarget?.focus?.({ preventScroll: true });
       }
 
       function requestKeyboardCapture() {
@@ -932,8 +938,39 @@
         return false;
       }
 
+      function releaseTouchPointer(pointerId) {
+        const held = touchHeld.get(pointerId);
+        if (!held) return;
+
+        touchHeld.delete(pointerId);
+        if (!Array.from(touchHeld.values()).some((activeHeld) => activeHeld.button === held.button)) {
+          held.button.classList.remove("is-active");
+        }
+        const heldKeyInfo = ROLE_KEYMAP[held.role]?.[held.code];
+        if (heldKeyInfo && !isTouchCodeHeld(held.role, held.code)) {
+          dispatchKeyboard("keyup", held.code, heldKeyInfo);
+          if (assignedRole === held.role) {
+            sendInput("keyup", held.role, held.code);
+          }
+        }
+      }
+
+      function clearTextSelection() {
+        const selection = window.getSelection?.();
+        if (selection && !selection.isCollapsed) {
+          selection.removeAllRanges();
+        }
+      }
+
       function preventTouchControlDefault(event) {
         event.preventDefault();
+        clearTextSelection();
+      }
+
+      function preventGameplayGestureDefault(event) {
+        if (!shouldUseTouchControls) return;
+        event.preventDefault();
+        clearTextSelection();
       }
 
       function handleTouchInput(event) {
@@ -958,7 +995,7 @@
           if (typeof event.pointerId === "number") {
             button.setPointerCapture?.(event.pointerId);
           }
-          if (touchHeld.has(event.pointerId)) return;
+          releaseTouchPointer(event.pointerId);
           const wasHeld = isTouchCodeHeld(role, code);
           touchHeld.set(event.pointerId, { button, role, code });
           button.classList.add("is-active");
@@ -971,19 +1008,7 @@
           return;
         }
 
-        const held = touchHeld.get(event.pointerId);
-        if (!held) return;
-        touchHeld.delete(event.pointerId);
-        if (!Array.from(touchHeld.values()).some((activeHeld) => activeHeld.button === held.button)) {
-          held.button.classList.remove("is-active");
-        }
-        const heldKeyInfo = ROLE_KEYMAP[held.role]?.[held.code];
-        if (heldKeyInfo && !isTouchCodeHeld(held.role, held.code)) {
-          dispatchKeyboard("keyup", held.code, heldKeyInfo);
-          if (assignedRole === held.role) {
-            sendInput("keyup", held.role, held.code);
-          }
-        }
+        releaseTouchPointer(event.pointerId);
       }
 
       function handleLegacyTouchInput(event) {
@@ -1179,6 +1204,8 @@
         button.addEventListener("pointercancel", handleTouchInput);
         button.addEventListener("pointerleave", handleTouchInput);
         button.addEventListener("lostpointercapture", handleTouchInput);
+        button.addEventListener("touchstart", preventTouchControlDefault, { passive: false });
+        button.addEventListener("touchmove", preventTouchControlDefault, { passive: false });
         button.addEventListener("contextmenu", preventTouchControlDefault);
         button.addEventListener("dragstart", preventTouchControlDefault);
         button.addEventListener("selectstart", preventTouchControlDefault);
@@ -1188,6 +1215,14 @@
           button.addEventListener("touchcancel", handleLegacyTouchInput, { passive: false });
         }
       }
+
+      playerUi?.addEventListener("touchstart", preventGameplayGestureDefault, { passive: false });
+      playerUi?.addEventListener("touchend", preventGameplayGestureDefault, { passive: false });
+      playerUi?.addEventListener("selectstart", preventGameplayGestureDefault);
+      document.addEventListener("selectionchange", clearTextSelection);
+      document.addEventListener("gesturestart", preventGameplayGestureDefault, { passive: false });
+      document.addEventListener("gesturechange", preventGameplayGestureDefault, { passive: false });
+      document.addEventListener("gestureend", preventGameplayGestureDefault, { passive: false });
 
       target?.addEventListener("pointerup", notifyHostGameStart, true);
       target?.addEventListener("pointerdown", () => {
