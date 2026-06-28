@@ -31,6 +31,9 @@
         background: #05060a;
         color: var(--text);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
 
       body {
@@ -45,6 +48,9 @@
         height: 100vh;
         height: 100dvh;
         background: #05060a;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
 
       ruffle-player {
@@ -52,6 +58,9 @@
         height: 100%;
         display: block;
         outline: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
 
       .overlay {
@@ -67,6 +76,9 @@
         color: var(--text);
         font-size: 12px;
         line-height: 1.35;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
       }
@@ -85,6 +97,9 @@
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--glass);
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
       }
@@ -98,6 +113,9 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
 
       .status-row,
@@ -181,6 +199,11 @@
         font: inherit;
         font-size: 12px;
         cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
       }
 
       .button:hover {
