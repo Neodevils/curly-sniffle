@@ -470,6 +470,7 @@
       let latestSwfPositions = { fireboy: null, watergirl: null };
       let lastPositionStateSentAt = 0;
       let swfPositionBridgeErrorLogged = false;
+      let remotePositionBridgeErrorLogged = false;
       const POSITION_STATE_INTERVAL_MS = 33;
       const localHeldCodes = new Set();
       const remoteHeldCodes = new Set();
@@ -1074,6 +1075,8 @@
           lastRemoteSeqByRole.set(message.role, messageSeq);
         }
 
+        applyRemotePosition(message);
+
         const keyInfo = ROLE_KEYMAP[message.role][message.code];
         debugLog("remote input", message.action, message.role, message.code);
         const remoteHeldKey = `${message.role}:${message.code}`;
@@ -1101,6 +1104,8 @@
           lastRemoteStateSeqByRole.set(message.role, stateSeqValue);
         }
 
+        applyRemotePosition(message);
+
         const allowedCodes = ROLE_KEYMAP[message.role] || {};
         const nextHeldCodes = new Set(
           Array.isArray(message.heldCodes)
@@ -1120,6 +1125,38 @@
             dispatchKeyboard("keyup", code, allowedCodes[code]);
           }
         }
+      }
+
+      function applyRemotePosition(message) {
+        if (!isRemoteRole(message.role)) return false;
+
+        const x = finiteNumberOrNull(message.x);
+        const y = finiteNumberOrNull(message.y);
+        if (x === null || y === null) return false;
+
+        const character = message.character === "fireboy" || message.character === "watergirl"
+          ? message.character
+          : roleCharacter(message.role);
+        const vx = finiteNumberOrNull(message.vx ?? message.velocity?.x) ?? 0;
+        const vy = finiteNumberOrNull(message.vy ?? message.velocity?.y) ?? 0;
+
+        try {
+          if (typeof rufflePlayer?.fireWaterSetPlayerState === "function") {
+            return Boolean(rufflePlayer.fireWaterSetPlayerState(character, x, y, vx, vy));
+          }
+
+          const ruffleApi = rufflePlayer?.ruffle?.();
+          if (typeof ruffleApi?.callExternalInterface === "function") {
+            return Boolean(ruffleApi.callExternalInterface("fireWaterSetPlayerState", character, x, y, vx, vy));
+          }
+        } catch (error) {
+          if (!remotePositionBridgeErrorLogged) {
+            remotePositionBridgeErrorLogged = true;
+            debugLog("remote position bridge unavailable", error);
+          }
+        }
+
+        return false;
       }
 
       function dispatchKeyboard(action, code, keyInfo) {
