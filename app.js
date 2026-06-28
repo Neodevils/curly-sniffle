@@ -1,5 +1,5 @@
       const assetUrl = (path) => new URL(path, document.baseURI).href;
-      const FILE_PATH = assetUrl("./swf/game.swf");
+      const FILE_PATH = assetUrl("./swf/game.swf?v=20260628-swf-sync-5");
       const DEBUG_MULTIPLAYER = false;
       const DISCORD_SDK_MODULE_URL = assetUrl("./vendor/discord-sdk.js");
       const DISCORD_READY_TIMEOUT_MS = 3500;
@@ -618,7 +618,7 @@
           now - lastPositionStateSentAt >= POSITION_STATE_INTERVAL_MS
         ) {
           lastPositionStateSentAt = now;
-          sendLocalState("position");
+          sendPositionFrame(localPosition);
         }
       }
 
@@ -786,7 +786,7 @@
           lastRemoteSeqByRole.set(message.role, messageSeq);
         }
 
-        applyRemotePosition(message);
+        applyRemotePosition(message, { markMissing: false });
 
         const keyInfo = ROLE_KEYMAP[message.role][message.code];
         debugLog("remote input", message.action, message.role, message.code);
@@ -815,7 +815,7 @@
           lastRemoteStateSeqByRole.set(message.role, stateSeqValue);
         }
 
-        applyRemotePosition(message);
+        applyRemotePosition(message, { markMissing: true });
 
         const allowedCodes = ROLE_KEYMAP[message.role] || {};
         const nextHeldCodes = new Set(
@@ -838,24 +838,28 @@
         }
       }
 
-      function applyRemotePosition(message) {
+      function applyRemotePosition(message, options = {}) {
         if (!isRemoteRole(message.role)) return false;
 
         const x = finiteNumberOrNull(message.x);
         const y = finiteNumberOrNull(message.y);
         if (x === null || y === null) {
-          setRemotePositionSummary(`${shortRoleLabel(message.role)} no x/y`);
+          if (options.markMissing) {
+            setRemotePositionSummary(`${shortRoleLabel(message.role)} no x/y`);
+          }
           return false;
         }
 
         const character = roleCharacter(message.role);
         const vx = finiteNumberOrNull(message.vx ?? message.velocity?.x) ?? 0;
         const vy = finiteNumberOrNull(message.vy ?? message.velocity?.y) ?? 0;
+        const direction = typeof message.direction === "string" ? message.direction : "idle";
+        const actionState = typeof message.actionState === "string" ? message.actionState : "idle";
         const remoteSummary = formatPositionSummary(message.role, { x, y });
 
         try {
           if (typeof rufflePlayer?.fireWaterSetPlayerState === "function") {
-            const applied = Boolean(rufflePlayer.fireWaterSetPlayerState(character, x, y, vx, vy));
+            const applied = Boolean(rufflePlayer.fireWaterSetPlayerState(character, x, y, vx, vy, direction, actionState));
             if (applied && !swfWriteBridgeReady) {
               swfWriteBridgeReady = true;
               updateRoomBadge();
@@ -866,7 +870,7 @@
 
           const ruffleApi = rufflePlayer?.ruffle?.();
           if (typeof ruffleApi?.callExternalInterface === "function") {
-            const applied = Boolean(ruffleApi.callExternalInterface("fireWaterSetPlayerState", character, x, y, vx, vy));
+            const applied = Boolean(ruffleApi.callExternalInterface("fireWaterSetPlayerState", character, x, y, vx, vy, direction, actionState));
             if (applied && !swfWriteBridgeReady) {
               swfWriteBridgeReady = true;
               updateRoomBadge();
@@ -947,6 +951,18 @@
 
         sendRaw(buildMovementPayload("state", assignedRole, {
           reason,
+          seq: ++stateSeq,
+          inputSeq
+        }));
+      }
+
+      function sendPositionFrame(localPosition, inputSeq = seq) {
+        if (!(assignedRole === "fire" || assignedRole === "water")) return;
+        if (socket?.readyState !== WebSocket.OPEN) return;
+        if (!localPosition) return;
+
+        sendRaw(buildMovementPayload("frame", assignedRole, {
+          reason: "position",
           seq: ++stateSeq,
           inputSeq
         }));
