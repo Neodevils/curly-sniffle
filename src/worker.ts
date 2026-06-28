@@ -4,6 +4,38 @@ const ROLE_KEYMAP = {
 };
 
 type PlayerRole = "fire" | "water" | "spectator";
+type ActiveRole = "fire" | "water";
+type PlayerSlot = "host" | "joiner" | "spectator";
+
+type RelayState = {
+  type: "state";
+  room: string;
+  playerId: string;
+  sessionId: string;
+  slot: PlayerSlot;
+  role: ActiveRole;
+  character: "fireboy" | "watergirl";
+  heldCodes: string[];
+  x: number | null;
+  y: number | null;
+  vx: number | null;
+  vy: number | null;
+  pixelX: number | null;
+  pixelY: number | null;
+  stageX: number | null;
+  stageY: number | null;
+  swfTimestamp: number | null;
+  level: number | null;
+  levelMode: string | null;
+  velocity: { x: number | null; y: number | null };
+  direction: string;
+  actionState: string;
+  seq: number;
+  inputSeq: number;
+  timestamp: number;
+  t: number;
+  serverT: number;
+};
 
 type Session = {
   id: string;
@@ -12,6 +44,7 @@ type Session = {
   room: string;
   joinedAt: number;
   lastSeen: number;
+  lastState?: RelayState;
 };
 
 type Env = {
@@ -21,6 +54,11 @@ type Env = {
 };
 
 const DEFAULT_DISCORD_CLIENT_ID = "1520427674860912660";
+const ROLE_METADATA = {
+  fire: { slot: "host", character: "fireboy" },
+  water: { slot: "joiner", character: "watergirl" },
+  spectator: { slot: "spectator", character: "spectator" }
+} as const;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -182,10 +220,13 @@ export class MultiplayerRoom {
       type: "welcome",
       sessionId: session.id,
       role: session.role,
+      slot: roleSlot(session.role),
+      character: roleCharacter(session.role),
       room,
       gameStarted: this.gameStarted,
       players: this.players()
     });
+    this.sendSnapshotsTo(session);
     this.broadcastPresence();
 
     return new Response(null, {
@@ -249,6 +290,8 @@ export class MultiplayerRoom {
           action: input.action,
           code: input.code,
           role: input.role,
+          slot: input.slot,
+          character: input.character,
           seq: input.seq,
           t: Date.now()
         });
@@ -260,6 +303,7 @@ export class MultiplayerRoom {
     if (message.type === "state" || message.type === "frame") {
       const state = this.validatedState(session, message);
       if (state) {
+        session.lastState = state;
         this.broadcast(state, session.id);
       }
       return;
@@ -273,7 +317,7 @@ export class MultiplayerRoom {
   }
 
   private validatedInput(session: Session, message: Record<string, unknown>): Record<string, unknown> | null {
-    if (session.role !== "fire" && session.role !== "water") {
+    if (!isActiveRole(session.role)) {
       this.send(session, { type: "error", code: "spectator_input", message: "Spectators cannot send input." });
       return null;
     }
@@ -293,21 +337,48 @@ export class MultiplayerRoom {
       return null;
     }
 
+    const heldCodes = validatedHeldCodes(session.role, message);
+    const seq = numericOrZero(message.seq);
+    const t = numericOrNow(message.t);
+
     return {
       type: "input",
       action: message.action,
       code: message.code,
       key: typeof message.key === "string" ? message.key : message.code,
-      role: session.role,
-      seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
-      t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
+      room: session.room,
+      playerId: session.id,
       sessionId: session.id,
+      slot: roleSlot(session.role),
+      role: session.role,
+      character: roleCharacter(session.role),
+      heldCodes,
+      x: finiteNumberOrNull(message.x),
+      y: finiteNumberOrNull(message.y),
+      vx: finiteNumberOrNull(message.vx),
+      vy: finiteNumberOrNull(message.vy),
+      pixelX: finiteNumberOrNull(message.pixelX),
+      pixelY: finiteNumberOrNull(message.pixelY),
+      stageX: finiteNumberOrNull(message.stageX),
+      stageY: finiteNumberOrNull(message.stageY),
+      swfTimestamp: finiteNumberOrNull(message.swfTimestamp),
+      level: finiteNumberOrNull(message.level),
+      levelMode: sanitizeNullableToken(message.levelMode),
+      velocity: {
+        x: finiteNumberOrNull((message.velocity as Record<string, unknown> | undefined)?.x),
+        y: finiteNumberOrNull((message.velocity as Record<string, unknown> | undefined)?.y)
+      },
+      direction: sanitizeToken(message.direction, directionFromHeld(session.role, heldCodes)),
+      actionState: sanitizeToken(message.actionState, actionStateFromHeld(session.role, heldCodes)),
+      seq,
+      timestamp: t,
+      t,
       serverT: Date.now()
     };
   }
 
-  private validatedState(session: Session, message: Record<string, unknown>): Record<string, unknown> | null {
-    if (session.role !== "fire" && session.role !== "water") {
+  private validatedState(session: Session, message: Record<string, unknown>): RelayState | null {
+    if (!isActiveRole(session.role)) {
       return null;
     }
 
@@ -315,24 +386,49 @@ export class MultiplayerRoom {
       return null;
     }
 
-    const allowedCodes = ROLE_KEYMAP[session.role];
-    const rawHeldCodes = Array.isArray(message.heldCodes)
-      ? message.heldCodes
-      : Array.isArray(message.held)
-        ? message.held
-        : [];
-    const heldCodes = rawHeldCodes
-      .filter((code): code is string => typeof code === "string" && allowedCodes.has(code))
-      .slice(0, allowedCodes.size);
+    const heldCodes = validatedHeldCodes(session.role, message);
+    const x = finiteNumberOrNull(message.x);
+    const y = finiteNumberOrNull(message.y);
+    const vx = finiteNumberOrNull(message.vx);
+    const vy = finiteNumberOrNull(message.vy);
+    const pixelX = finiteNumberOrNull(message.pixelX);
+    const pixelY = finiteNumberOrNull(message.pixelY);
+    const stageX = finiteNumberOrNull(message.stageX);
+    const stageY = finiteNumberOrNull(message.stageY);
+    const swfTimestamp = finiteNumberOrNull(message.swfTimestamp);
+    const level = finiteNumberOrNull(message.level);
+    const t = numericOrNow(message.t);
 
     return {
       type: "state",
-      role: session.role,
-      heldCodes,
-      seq: typeof message.seq === "number" && Number.isFinite(message.seq) ? message.seq : 0,
-      inputSeq: typeof message.inputSeq === "number" && Number.isFinite(message.inputSeq) ? message.inputSeq : 0,
-      t: typeof message.t === "number" && Number.isFinite(message.t) ? message.t : Date.now(),
+      room: session.room,
+      playerId: session.id,
       sessionId: session.id,
+      slot: roleSlot(session.role),
+      role: session.role,
+      character: roleCharacter(session.role),
+      heldCodes,
+      x,
+      y,
+      vx,
+      vy,
+      pixelX,
+      pixelY,
+      stageX,
+      stageY,
+      swfTimestamp,
+      level,
+      levelMode: sanitizeNullableToken(message.levelMode),
+      velocity: {
+        x: finiteNumberOrNull((message.velocity as Record<string, unknown> | undefined)?.x) ?? vx,
+        y: finiteNumberOrNull((message.velocity as Record<string, unknown> | undefined)?.y) ?? vy
+      },
+      direction: sanitizeToken(message.direction, directionFromHeld(session.role, heldCodes)),
+      actionState: sanitizeToken(message.actionState, actionStateFromHeld(session.role, heldCodes)),
+      seq: numericOrZero(message.seq),
+      inputSeq: numericOrZero(message.inputSeq),
+      timestamp: numericOrNow(message.timestamp ?? message.t),
+      t,
       serverT: Date.now()
     };
   }
@@ -362,11 +458,35 @@ export class MultiplayerRoom {
     });
   }
 
-  private players(): Array<{ id: string; role: PlayerRole; slot: "host" | "joiner" | "spectator"; joinedAt: number; lastSeen: number }> {
+  private sendSnapshotsTo(session: Session): void {
+    for (const peer of this.sessions.values()) {
+      if (peer.id !== session.id && peer.lastState) {
+        this.send(session, peer.lastState);
+      }
+    }
+  }
+
+  private broadcastSnapshots(): void {
+    for (const session of this.sessions.values()) {
+      if (session.lastState) {
+        this.broadcast(session.lastState, session.id);
+      }
+    }
+  }
+
+  private players(): Array<{
+    id: string;
+    role: PlayerRole;
+    slot: PlayerSlot;
+    character: string;
+    joinedAt: number;
+    lastSeen: number;
+  }> {
     return Array.from(this.sessions.values()).map((session) => ({
       id: session.id,
       role: session.role,
-      slot: session.role === "fire" ? "host" : session.role === "water" ? "joiner" : "spectator",
+      slot: roleSlot(session.role),
+      character: roleCharacter(session.role),
       joinedAt: session.joinedAt,
       lastSeen: session.lastSeen
     }));
@@ -401,6 +521,7 @@ export class MultiplayerRoom {
       gameStarted: this.gameStarted
     });
     this.broadcastPresence();
+    this.broadcastSnapshots();
   }
 }
 
@@ -411,4 +532,72 @@ function normalizeRole(value: string | null): "fire" | "water" | "" {
 function sanitizeRoom(value: string | null): string {
   if (!value) return "";
   return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+}
+
+function isActiveRole(role: PlayerRole): role is ActiveRole {
+  return role === "fire" || role === "water";
+}
+
+function roleSlot(role: PlayerRole): PlayerSlot {
+  return ROLE_METADATA[role].slot;
+}
+
+function roleCharacter(role: ActiveRole): "fireboy" | "watergirl";
+function roleCharacter(role: PlayerRole): string;
+function roleCharacter(role: PlayerRole): string {
+  return ROLE_METADATA[role].character;
+}
+
+function numericOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function numericOrNow(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : Date.now();
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function sanitizeToken(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || fallback;
+}
+
+function sanitizeNullableToken(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || null;
+}
+
+function validatedHeldCodes(role: ActiveRole, message: Record<string, unknown>): string[] {
+  const allowedCodes = ROLE_KEYMAP[role];
+  const rawHeldCodes = Array.isArray(message.heldCodes)
+    ? message.heldCodes
+    : Array.isArray(message.held)
+      ? message.held
+      : [];
+
+  return rawHeldCodes
+    .filter((code): code is string => typeof code === "string" && allowedCodes.has(code))
+    .slice(0, allowedCodes.size);
+}
+
+function directionFromHeld(role: ActiveRole, heldCodes: string[]): string {
+  if (role === "fire") {
+    if (heldCodes.includes("ArrowLeft")) return "left";
+    if (heldCodes.includes("ArrowRight")) return "right";
+  }
+
+  if (heldCodes.includes("KeyA")) return "left";
+  if (heldCodes.includes("KeyD")) return "right";
+  return "idle";
+}
+
+function actionStateFromHeld(role: ActiveRole, heldCodes: string[]): string {
+  if ((role === "fire" && heldCodes.includes("ArrowUp")) || (role === "water" && heldCodes.includes("KeyW"))) {
+    return "jump";
+  }
+
+  return directionFromHeld(role, heldCodes) === "idle" ? "idle" : "move";
 }

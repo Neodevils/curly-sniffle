@@ -7,7 +7,7 @@ This repository hosts a fullscreen single-page Ruffle wrapper for a legal SWF at
 This repository intentionally does not include Fireboy & Watergirl or any other copyrighted SWF.
 Only add a SWF that you created, own, or have permission to distribute.
 
-The multiplayer prototype runs one local Ruffle instance per player. The SWF is closed and Ruffle runs the game locally, so the Cloudflare Worker does not provide true server-authoritative game-state simulation. It coordinates rooms, assigns roles, validates role keys, and relays input events between players. Both players should choose the same level locally, then one controls Fireboy and the other controls Watergirl.
+The multiplayer prototype runs one local Ruffle instance per player. The SWF is closed and Ruffle runs the game locally, so the Cloudflare Worker does not provide true server-authoritative game-state simulation. It coordinates rooms, assigns roles, validates role keys, relays input events between players, and forwards lightweight movement/state snapshots for reconciliation. Both players should choose the same level locally, then the Host controls Fireboy and the Joiner controls Watergirl.
 
 If desync happens, the proper solution is remaking the game in HTML5 or modifying/owning the original game source.
 
@@ -111,22 +111,25 @@ Initial roles: fire, water
 Extra clients after two active players: spectator
 ```
 
-The Worker assigns the first participant to `fire` and the second participant to `water`. Each player keeps their own local SWF view and can navigate menus or enter levels locally. Once both players are in the same level, each active player can only send input for their assigned role, and the server validates that assignment before relaying input.
+The Worker assigns the first participant to `fire` (`Host - Fireboy`) and the second participant to `water` (`Joiner - Watergirl`). Each player keeps their own local SWF view and can navigate menus or enter levels locally. Once both players are in the same level, each active player can only send input for their assigned role, and the server validates that assignment before relaying input.
+
+Relayed input/state packets include trusted room, player/session id, slot, role, character, held keys, direction/action state, sequence/timestamp values, and SWF-reported movement state. During an active level, the wrapper polls the SWF `fireWaterGetState()` bridge and forwards raw Box2D `x/y`, `vx/vy`, pixel coordinates, and stage coordinates for the local character.
 
 Debug room/status details are hidden by default. Add `?debug=1` to show the diagnostic overlay.
 
 ## Mobile Controls
 
-The page includes touch D-pads:
+The page includes mobile touch controls:
 
 ```txt
-Single-player: shows both Fireboy and Watergirl pads
-Multiplayer fire role: shows Fireboy pad only
-Multiplayer water role: shows Watergirl pad only
-Spectator: hides both pads
+Left side: left and right movement buttons
+Right side: jump button
+Host/fire role: buttons drive Fireboy keys
+Joiner/water role: buttons drive Watergirl keys
+Spectator: hides the mobile controls
 ```
 
-Touch controls are shown only when JavaScript device detection reports `phone` or `tablet`; desktop does not show D-pads. Touch controls dispatch keyboard events into Ruffle locally. In multiplayer, they also relay the assigned role's input through the Worker.
+Touch controls are shown only when JavaScript device and pointer/touch capability detection reports a phone or tablet; desktop does not show them. Touch controls use independent Pointer Events so movement and jump can be held together. They dispatch keyboard events into Ruffle locally and, in multiplayer, relay the assigned role's input through the same Worker path as desktop keyboard input.
 
 ## Discord Activity
 
@@ -140,11 +143,11 @@ The top-right Activity UI only shows the local role:
 
 ```txt
 Host - Fireboy
-Guest - Watergirl
+Joiner - Watergirl
 Spectator
 ```
 
-The first active participant is the host/fire role. The second participant is the guest/water role. Both participants keep their own local Ruffle screen, choose the same level locally, and then send only their assigned movement input through the relay.
+The first active participant is the Host/Fireboy role. The second participant is the Joiner/Watergirl role. Both participants keep their own local Ruffle screen, choose the same level locally, and then send only their assigned movement input through the relay.
 Additional participants join as spectators and cannot send movement input.
 
 Production browser URL:
