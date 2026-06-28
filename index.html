@@ -79,6 +79,8 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        box-sizing: border-box;
+        max-width: calc(100vw - 24px);
         padding: 8px;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -96,47 +98,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-
-      .room-badge {
-        position: fixed;
-        top: 50%;
-        right: max(12px, env(safe-area-inset-right));
-        z-index: 12;
-        width: 176px;
-        padding: 9px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--glass);
-        color: var(--text);
-        font-size: 11px;
-        line-height: 1.25;
-        transform: translateY(-50%);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-      }
-
-      .room-badge span {
-        display: block;
-        color: var(--muted);
-        font-size: 10px;
-        font-weight: 650;
-        text-transform: uppercase;
-      }
-
-      .room-badge strong {
-        display: block;
-        margin: 2px 0 7px;
-        overflow: hidden;
-        color: var(--text);
-        font-size: 12px;
-        font-weight: 760;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .room-badge strong:last-child {
-        margin-bottom: 0;
       }
 
       .status-row,
@@ -293,8 +254,8 @@
       }
     </style>
 
-    <script src="./ruffle-config.js?v=20260628-swf-sync-5"></script>
-    <script src="./vendor/ruffle/ruffle.js?v=20260628-swf-sync-5"></script>
+    <script src="./ruffle-config.js?v=20260628-swf-sync-6"></script>
+    <script src="./vendor/ruffle/ruffle.js?v=20260628-swf-sync-6"></script>
   </head>
 
   <body>
@@ -303,16 +264,6 @@
     <section id="playerUi" class="player-ui" aria-label="Game controls">
       <span id="compactRoleText" class="role-pill">Single player</span>
     </section>
-
-    <aside id="roomBadge" class="room-badge" aria-label="Room status">
-      <span>Room</span><strong id="roomBadgeId">loading</strong>
-      <span>Status</span><strong id="roomBadgeStatus">Loading</strong>
-      <span>Role</span><strong id="roomBadgeRole">Loading</strong>
-      <span>Players</span><strong id="roomBadgePlayers">0/2 active</strong>
-      <span>SWF</span><strong id="roomBadgeBridge">Bridge waiting</strong>
-      <span>Local</span><strong id="roomBadgeLocal">-</strong>
-      <span>Remote</span><strong id="roomBadgeRemote">-</strong>
-    </aside>
 
     <section id="debugOverlay" class="overlay is-hidden" aria-label="Multiplayer debug status">
       <div class="status-row">
@@ -342,6 +293,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=20260628-swf-sync-5"></script>
+    <script src="./app.js?v=20260628-swf-sync-6"></script>
   </body>
 </html>
