@@ -1,6 +1,7 @@
-      const FILE_PATH = "./swf/game.swf";
+      const assetUrl = (path) => new URL(path, document.baseURI).href;
+      const FILE_PATH = assetUrl("./swf/game.swf");
       const DEBUG_MULTIPLAYER = false;
-      const DISCORD_SDK_MODULE_URL = "./vendor/discord-sdk.js";
+      const DISCORD_SDK_MODULE_URL = assetUrl("./vendor/discord-sdk.js");
       const DISCORD_READY_TIMEOUT_MS = 3500;
       const DISCORD_CLIENT_ID = "1520427674860912660";
       const MULTIPLAYER_SERVER_URL = "wss://fireboy-watergirl.neodevils-contact.workers.dev/room";
