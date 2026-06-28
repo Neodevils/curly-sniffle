@@ -78,6 +78,11 @@
       const roomText = document.querySelector("#roomText");
       const roleText = document.querySelector("#roleText");
       const compactRoleText = document.querySelector("#compactRoleText");
+      const roomBadgeId = document.querySelector("#roomBadgeId");
+      const roomBadgeStatus = document.querySelector("#roomBadgeStatus");
+      const roomBadgeRole = document.querySelector("#roomBadgeRole");
+      const roomBadgePlayers = document.querySelector("#roomBadgePlayers");
+      const roomBadgeBridge = document.querySelector("#roomBadgeBridge");
       const discordText = document.querySelector("#discordText");
       const playersText = document.querySelector("#playersText");
       const touchControls = document.querySelector("#touchControls");
@@ -105,6 +110,8 @@
       let latestSwfState = null;
       let latestSwfPositions = { fireboy: null, watergirl: null };
       let lastPositionStateSentAt = 0;
+      let swfReadBridgeReady = false;
+      let swfWriteBridgeReady = false;
       let swfPositionBridgeErrorLogged = false;
       let remotePositionBridgeErrorLogged = false;
       const POSITION_STATE_INTERVAL_MS = 33;
@@ -117,6 +124,7 @@
 
       debugOverlay?.classList.toggle("is-hidden", !debugMode);
       roomText.textContent = roomId;
+      updateRoomBadge();
       syncRoomUrl();
 
       function debugLog(...args) {
@@ -216,6 +224,7 @@
       function setStatus(state, text) {
         statusDot.className = `dot ${state}`;
         statusText.textContent = text;
+        updateRoomBadge();
       }
 
       function setPlayers(players = []) {
@@ -225,6 +234,7 @@
         const activeLabels = active.map((player) => roleLabel(player.role)).join(", ");
         const spectatorCount = Math.max(0, players.length - active.length);
         playersText.textContent = `${active.length}/2 active${activeLabels ? `: ${activeLabels}` : ""}, ${spectatorCount} spectator${discordSuffix}`;
+        updateRoomBadge();
       }
 
       function updateRole(role) {
@@ -235,8 +245,25 @@
         assignedRole = role || "single-player";
         roleText.textContent = roleLabel(assignedRole);
         compactRoleText.textContent = roleLabel(assignedRole);
+        updateRoomBadge();
         updateTouchControls();
         sendLocalState("role");
+      }
+
+      function updateRoomBadge() {
+        const activePlayers = currentPlayers.filter((player) => player.role === "fire" || player.role === "water");
+        roomBadgeId.textContent = roomId || "-";
+        roomBadgeStatus.textContent = statusText?.textContent || "Single player";
+        roomBadgeRole.textContent = roleLabel(assignedRole);
+        roomBadgePlayers.textContent = `${activePlayers.length}/2 active`;
+        roomBadgeBridge.textContent = swfBridgeLabel();
+      }
+
+      function swfBridgeLabel() {
+        if (swfReadBridgeReady && swfWriteBridgeReady) return "read/write ok";
+        if (swfReadBridgeReady) return "read ok";
+        if (swfWriteBridgeReady) return "write ok";
+        return "Bridge waiting";
       }
 
       function roleLabel(role) {
@@ -577,12 +604,22 @@
       function readSwfPositionState() {
         try {
           if (typeof rufflePlayer?.fireWaterGetState === "function") {
-            return rufflePlayer.fireWaterGetState();
+            const state = rufflePlayer.fireWaterGetState();
+            if (!swfReadBridgeReady && state && typeof state === "object") {
+              swfReadBridgeReady = true;
+              updateRoomBadge();
+            }
+            return state;
           }
 
           const ruffleApi = rufflePlayer?.ruffle?.();
           if (typeof ruffleApi?.callExternalInterface === "function") {
-            return ruffleApi.callExternalInterface("fireWaterGetState");
+            const state = ruffleApi.callExternalInterface("fireWaterGetState");
+            if (!swfReadBridgeReady && state && typeof state === "object") {
+              swfReadBridgeReady = true;
+              updateRoomBadge();
+            }
+            return state;
           }
         } catch (error) {
           if (!swfPositionBridgeErrorLogged) {
@@ -770,20 +807,28 @@
         const y = finiteNumberOrNull(message.y);
         if (x === null || y === null) return false;
 
-        const character = message.character === "fireboy" || message.character === "watergirl"
-          ? message.character
-          : roleCharacter(message.role);
+        const character = roleCharacter(message.role);
         const vx = finiteNumberOrNull(message.vx ?? message.velocity?.x) ?? 0;
         const vy = finiteNumberOrNull(message.vy ?? message.velocity?.y) ?? 0;
 
         try {
           if (typeof rufflePlayer?.fireWaterSetPlayerState === "function") {
-            return Boolean(rufflePlayer.fireWaterSetPlayerState(character, x, y, vx, vy));
+            const applied = Boolean(rufflePlayer.fireWaterSetPlayerState(character, x, y, vx, vy));
+            if (applied && !swfWriteBridgeReady) {
+              swfWriteBridgeReady = true;
+              updateRoomBadge();
+            }
+            return applied;
           }
 
           const ruffleApi = rufflePlayer?.ruffle?.();
           if (typeof ruffleApi?.callExternalInterface === "function") {
-            return Boolean(ruffleApi.callExternalInterface("fireWaterSetPlayerState", character, x, y, vx, vy));
+            const applied = Boolean(ruffleApi.callExternalInterface("fireWaterSetPlayerState", character, x, y, vx, vy));
+            if (applied && !swfWriteBridgeReady) {
+              swfWriteBridgeReady = true;
+              updateRoomBadge();
+            }
+            return applied;
           }
         } catch (error) {
           if (!remotePositionBridgeErrorLogged) {
@@ -998,6 +1043,7 @@
           if (!explicitRoomId && discordSdk.instanceId) {
             roomId = sanitizeRoom(discordSdk.instanceId) || roomId;
             roomText.textContent = roomId;
+            updateRoomBadge();
             syncRoomUrl();
           }
 
