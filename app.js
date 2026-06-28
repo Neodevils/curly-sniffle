@@ -83,6 +83,8 @@
       const roomBadgeRole = document.querySelector("#roomBadgeRole");
       const roomBadgePlayers = document.querySelector("#roomBadgePlayers");
       const roomBadgeBridge = document.querySelector("#roomBadgeBridge");
+      const roomBadgeLocal = document.querySelector("#roomBadgeLocal");
+      const roomBadgeRemote = document.querySelector("#roomBadgeRemote");
       const discordText = document.querySelector("#discordText");
       const playersText = document.querySelector("#playersText");
       const touchControls = document.querySelector("#touchControls");
@@ -112,6 +114,8 @@
       let lastPositionStateSentAt = 0;
       let swfReadBridgeReady = false;
       let swfWriteBridgeReady = false;
+      let localPositionSummary = "-";
+      let remotePositionSummary = "-";
       let swfPositionBridgeErrorLogged = false;
       let remotePositionBridgeErrorLogged = false;
       const POSITION_STATE_INTERVAL_MS = 33;
@@ -263,6 +267,8 @@
         roomBadgeRole.textContent = roleLabel(assignedRole);
         roomBadgePlayers.textContent = `${activePlayers.length}/2 active`;
         roomBadgeBridge.textContent = swfBridgeLabel();
+        roomBadgeLocal.textContent = localPositionSummary;
+        roomBadgeRemote.textContent = remotePositionSummary;
       }
 
       function swfBridgeLabel() {
@@ -282,6 +288,12 @@
 
       function roleCharacter(role) {
         return ROLE_METADATA[role]?.character || ROLE_METADATA["single-player"].character;
+      }
+
+      function shortRoleLabel(role) {
+        if (role === "fire") return "Host";
+        if (role === "water") return "Joiner";
+        return "Local";
       }
 
       function localControlRole() {
@@ -595,6 +607,9 @@
         };
 
         const localPosition = latestPositionForRole(assignedRole);
+        if (assignedRole === "fire" || assignedRole === "water") {
+          setLocalPositionSummary(formatPositionSummary(assignedRole, localPosition));
+        }
         const now = Date.now();
         if (
           state.active &&
@@ -677,6 +692,23 @@
 
       function finiteNumberOrNull(value) {
         return typeof value === "number" && Number.isFinite(value) ? value : null;
+      }
+
+      function formatPositionSummary(role, position) {
+        if (!position) return `${shortRoleLabel(role)} no x/y`;
+        return `${shortRoleLabel(role)} ${position.x.toFixed(2)},${position.y.toFixed(2)}`;
+      }
+
+      function setLocalPositionSummary(summary) {
+        if (localPositionSummary === summary) return;
+        localPositionSummary = summary;
+        updateRoomBadge();
+      }
+
+      function setRemotePositionSummary(summary) {
+        if (remotePositionSummary === summary) return;
+        remotePositionSummary = summary;
+        updateRoomBadge();
       }
 
       function buildMovementPayload(type, role, extra = {}) {
@@ -811,11 +843,15 @@
 
         const x = finiteNumberOrNull(message.x);
         const y = finiteNumberOrNull(message.y);
-        if (x === null || y === null) return false;
+        if (x === null || y === null) {
+          setRemotePositionSummary(`${shortRoleLabel(message.role)} no x/y`);
+          return false;
+        }
 
         const character = roleCharacter(message.role);
         const vx = finiteNumberOrNull(message.vx ?? message.velocity?.x) ?? 0;
         const vy = finiteNumberOrNull(message.vy ?? message.velocity?.y) ?? 0;
+        const remoteSummary = formatPositionSummary(message.role, { x, y });
 
         try {
           if (typeof rufflePlayer?.fireWaterSetPlayerState === "function") {
@@ -824,6 +860,7 @@
               swfWriteBridgeReady = true;
               updateRoomBadge();
             }
+            if (applied) setRemotePositionSummary(remoteSummary);
             return applied;
           }
 
@@ -834,6 +871,7 @@
               swfWriteBridgeReady = true;
               updateRoomBadge();
             }
+            if (applied) setRemotePositionSummary(remoteSummary);
             return applied;
           }
         } catch (error) {
